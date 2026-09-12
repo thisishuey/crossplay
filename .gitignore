@@ -98,3 +98,8 @@ site/wikipedia/mock/*.zst
 site/wikipedia/mock/*.idx
 site/wikipedia/mock/*.dir
 site/wikipedia/mock/shards/
+
+# BMad Method install: per-user install answers (name, language, skill level).
+# The shared config lives in _bmad/config.toml and IS committed; this one is
+# personal and the installer rewrites it on every run.
+_bmad/config.user.toml
