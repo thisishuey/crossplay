@@ -1,6 +1,6 @@
 [Install it](https://crossplay.ma-r-s.com/#get) · [which file, and by hand](https://github.com/ma-r-s/crossplay/blob/xteink/docs/install.md) · [earlier releases](https://github.com/ma-r-s/crossplay/blob/xteink/docs/release-notes.md)
 
-### What is new in 1.14.0-hx1789340977
+### What is new in 1.14.0-fork1789340977
 
 - Hex. Eleven by eleven, against the device, someone next to you, or someone nearby.
 - Place a stone, join your two edges. There are no captures, and the game cannot be drawn.
