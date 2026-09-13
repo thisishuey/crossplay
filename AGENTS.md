@@ -97,9 +97,12 @@ This fork exists to add games and small tools under `src/apps_local/`, to be sen
 - Seed `fs_agent/.crosspoint/` before screenshotting, and set `CROSSPLAY_AUTOSTART=<title>`
   rather than relying on a tap sequence -- the same taps land on a different game on
   another machine.
-- Upstream's `ci.yml` and `pr-formatting-check.yml` run on this fork's PRs: a GitHub-side
-  workflow disable does not survive a fork, so expect ESP32-C3 builds and a semantic-title
-  check that CrossPlay itself abandoned.
+- GitHub Actions is disabled repo-wide on this fork, because it inherited workflow files
+  when it was forked. No PR here gets CI of any kind until someone enables it in the
+  Actions tab, so local `check.sh` is the only gate that runs.
+- Enabling Actions turns on all ten workflows at once, including upstream's `ci.yml` and
+  `pr-formatting-check.yml` (both marked active): disable those two individually first, or
+  every PR draws ESP32-C3 builds and a semantic-title check CrossPlay abandoned.
 - This clone has no remote for `ma-r-s/crossplay`, so every script resolving
   `origin/xteink` (`wt.sh`, `check.sh`, `device-build-needed.sh`) measures against this
   fork, not the upstream one.
