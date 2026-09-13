@@ -188,6 +188,43 @@ demanded it:
 
 ## Review Triage Log
 
+Three layers ran against the diff since `0a99092`. Verdicts are mine, rendered at the cited
+line; the reviewers' own severities were discarded. `BH` = blind-hunter, `EC` = edge-case,
+`VG` = verification-gap (its numbered findings arrive pre-verified).
+
+**Kept**
+
+- BH1 `high` — CONFIRMED. `onMatchEnded():426` calls `recordResult()` with no write; `writeSave():203` refuses while `inMatch()`; then `onLinkEnded():405` calls `loadSave()`, which assigns `wins`/`losses` from disk at `:179-180`. Every nearby match result is counted in memory and discarded. Solo paths at `:301`/`:334` pair `recordResult(); writeSave();` and are unaffected.
+- BH10 `high` — CONFIRMED, same root cause as BH1. No suite runs `recordResult()` -> `onLinkEnded()` -> `loadSave()` together; `test_hexlink.cpp` counts on a stand-in Device, so the seam BH1 falls through is untested.
+- BH2 / EC6 `medium` — CONFIRMED. `writeSave():230-232` discards `writeFile`'s bool and runs `Storage.remove(kSavePath)` unconditionally. A failed temp write destroys the record and the resumable game, which is the exact window the comment above it argues temp-then-rename exists to close.
+- BH7 `medium` — CONFIRMED empirically. `sizeof(hex::Game)`==162 with byte 159 padding (`lastMove` 158, `moveNumber` aligned to 160). `reset()` never writes it: two logically identical games memcmp as different. The struct is memcpy'd onto the wire and memcmp'd by three tests, which pass only by value-initialisation at their declaration sites.
+- BH6 / EC1 / VGo2 `medium` — CONFIRMED as an unbounded write. `HexBrain.cpp:157` pushes up to 6 per placement into a 121-entry per-colour stack array drained ~1 per turn, so the envelope (~300) exceeds capacity. Both reviewers measured a max of 5-6 over 220k playouts, so it is not reached today, but nothing bounds it and it is the hottest loop on a 16KB task stack.
+- VG1 `medium` — pre-verified. No test lends a clock; every call passes `clock=nullptr` and every `budgetMs` is 0, so deleting the budget break leaves the suite green.
+- VG2 `medium` — pre-verified. `settingsFor` is asserted nowhere; the reviewer collapsed all three levels to identical settings and got 115549 checks, 0 failed.
+- VG3 `medium` — pre-verified. `hex_search` is absent from `scripts_local/stack_budget.py` TASKS, so CI's stack gate never measures the new 16KB task. Go's equivalent is registered.
+- VG4 `medium` — pre-verified. The hand-rolled `naturalLog` is unexported and unasserted; `return 0.0;` kills the exploration term with the suite still green.
+- VG5 `medium` — pre-verified. `testTheSameSeedReturnsTheSameMove` loops Easy and Normal only, so the AMAF branch is never asked to repeat.
+- VG6 `low` — pre-verified. Nothing gates `docs/apps/README.md`; the stale count and unlinked `go.md` this diff repaired are the demonstration.
+- BH11 `low` — the notch controls are never asserted clear of board ink; the diff's own notes record that a screenshot, not an assertion, caught "PLAY AG...".
+- BH5 `low` — the loop task is blocked inside the search, so `preventAutoSleep()` is polled only on the THINKING repaint. Behaviour is safe (sleep runs on the same blocked task) but `HexActivity.h` and `docs/apps/hex.md` both describe something the code does not do.
+- BH13 / VGo1 `low` — `hexbrain::lastMs()` has no caller; the header says the device log prints it, and it does not.
+- BH8 `low` — the 1400-byte save line is spelled independently in four places and `HexSave.h` never states it; a drift degrades silently into the short-line path, which is designed to look like success.
+- BH14a `low` — `playOneGame`'s comment describes `blackSeed`/`whiteSeed` parameters that do not exist.
+- BH14b `low` — `testTheHexBoardRunsCornerToCorner...` hardcodes 240 as the panel mid-line in a file whose own comments insist extents come from `DeviceContext`.
+
+**Rejected**
+
+- BH3 / EC3 `false` — the bad outcome cannot occur. `onExit()` runs on the loop task (`ActivityManager::loop`), and that same task blocks in `chooseComputerMove` on `portMAX_DELAY` for the whole search, so no search is ever in flight when `onExit()` runs; the parked task acknowledges at once and the 2000ms timeout is unreachable. Safety depends on the search staying synchronous.
+- EC5 `false` — a full board with `over()` false is forbidden by the Hex theorem, which `HexCore` enforces and the suite verifies over random games and random full colourings. Reachable only from a corrupted state, which is EC2's claim, not this one.
+- BH4 `low`, rejected — real (Back is unresponsive for up to 4.5s on HARD) but deliberate, documented, and identical to Go's shipped design; a cancel flag checked between simulations is added complexity, not a direct correction.
+- EC2 `low`, rejected — `takeOpponentState()` does adopt an unvalidated peer state, but peers run the same firmware and the payload is size-checked; the fix adds guards.
+- EC4, BH9 / EC7 `low`, rejected — `unpack()` does not reject cell code 3, a full board with no winner, or absurd wins/losses. All require a corrupted save; the fixes add guards. Noted as an inconsistency, since the neighbouring fields are clamped.
+- EC8 `low`, rejected — `box.width - 66` goes negative only below a 66px card, unreachable on the two shipped panels, both 800x480.
+- BH12 / EC9 `low`, rejected — the miniature's `room` has no floor and `mini.a = 7` is a hardcoded ceiling, but neither is reachable on the only panel size that ships; the chrome probe covers the real geometry. Fix adds a guard.
+- VGo3 `low`, rejected — `budgetMs` is `uint16_t`, harmless at the shipped 4500ms. No defect today; noted for anyone raising the budget.
+
+No entry routed to intent_gap or bad_spec, so no loopback: every kept finding's smallest fix is local and adds no public surface.
+
 ## Design Notes
 
 Axial coordinates, `idx = r * 11 + c`. Six neighbours: `(r,c-1) (r,c+1) (r-1,c) (r-1,c+1)
