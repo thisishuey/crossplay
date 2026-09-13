@@ -67,8 +67,11 @@ if [ -d /usr/lib/llvm-21/bin ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo 'export PATH="/usr/lib/llvm-21/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
 fi
 
-# The simulator links SDL2, and MD5Builder wraps OpenSSL on Linux.
-step "simulator libs" bash -c "$SUDO apt-get install -y -qq libsdl2-dev libssl-dev"
+# The simulator links SDL2, and MD5Builder wraps OpenSSL on Linux. zstd is the
+# packer host-tests/wikipedia shells out to, and gh is what the board suites
+# call; without either the suite fails rather than skipping, which reads like a
+# code defect (13 errors in wikipedia, all "zstd is not on PATH").
+step "host tools" bash -c "$SUDO apt-get install -y -qq libsdl2-dev libssl-dev zstd gh"
 
 # PlatformIO here is the pioarduino fork CI pins, not upstream platformio: the
 # distribution is named pioarduino-core, and it installs from git because the
