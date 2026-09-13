@@ -32,6 +32,8 @@ lib/EpdFont/scripts/output/
 # (worktrees, scheduled-task locks, settings.local, scout CLEANUP.md) out.
 .claude/*
 !.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
 /managed_components
 /.dummy
 /CMakeLists.txt

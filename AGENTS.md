@@ -59,10 +59,11 @@ This fork exists to add games and small tools under `src/apps_local/`, to be sen
 - Run `pio check --fail-on-defect high` before a PR -- CI runs cppcheck, check.sh does not.
 - `./bin/clang-format-fix -g` formats git-modified files and needs clang-format 21 or
   newer. Never invoke clang-format directly.
-- Every session runs in a fresh, ephemeral environment, so start by running
-  `git submodule update --init --recursive` (builds fail on missing headers without
-  `freeink-sdk/`) and `git config core.hooksPath .githooks`. Neither survives the
-  container, and nothing else works until both have run.
+- Every session runs in a fresh, ephemeral environment. `.claude/hooks/session-start.sh`
+  rebuilds it (submodules, hooksPath, clang-format 21, SDL2, PlatformIO, Python deps) and
+  prints what it could not do. Outside a web session, run at least
+  `git submodule update --init --recursive` and `git config core.hooksPath .githooks`
+  yourself; builds fail on missing `freeink-sdk/` headers and commits fail the format gate.
 
 ## Conventions that differ from defaults
 
