@@ -14,6 +14,7 @@
 // source: a test that asks the implementation whether the implementation is
 // right is a test that cannot fail.
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -81,6 +82,26 @@ void flatten(const hex::Game& game, uint8_t out[hex::kCells]) {
 }
 
 // --- the board -------------------------------------------------------------
+
+void testAResetBoardIsTheSameBYTESWhateverWasThereBefore() {
+  // `Game` is copied as bytes by the link layer and compared as bytes by the
+  // tests, so a byte reset() does not write is a byte that travels and a byte
+  // that makes two identical positions differ. `moveNumber` wants two-byte
+  // alignment, so the compiler would leave one before it -- named `reserved`
+  // and zeroed, for exactly this.
+  hex::Game dirty;
+  std::memset(&dirty, 0xAA, sizeof(dirty));
+  hex::reset(dirty);
+  hex::Game clean;
+  std::memset(&clean, 0x00, sizeof(clean));
+  hex::reset(clean);
+  CHECK(std::memcmp(&dirty, &clean, sizeof(hex::Game)) == 0);
+
+  // And it survives a move, which is what actually crosses the wire.
+  CHECK(hex::play(dirty, hex::cellAt(3, 4)));
+  CHECK(hex::play(clean, hex::cellAt(3, 4)));
+  CHECK(std::memcmp(&dirty, &clean, sizeof(hex::Game)) == 0);
+}
 
 void testTheEmptyBoardIsEmptyAndBlackMovesFirst() {
   hex::Game game;
@@ -379,7 +400,7 @@ hexsave::Save aSaveWithAGameInIt() {
 
 void testASaveComesBackTheWayItWentIn() {
   const hexsave::Save save = aSaveWithAGameInIt();
-  char line[1400];
+  char line[hexsave::kMaxLineBytes];
   const int bytes = hexsave::pack(save, line, sizeof(line));
   CHECK(bytes > 0);
   CHECK(line[bytes - 1] == '\n');
@@ -404,13 +425,13 @@ void testASaveComesBackTheWayItWentIn() {
 
 void testAShortLineKeepsWhatItReachedAndDefaultsTheRest() {
   const hexsave::Save save = aSaveWithAGameInIt();
-  char line[1400];
+  char line[hexsave::kMaxLineBytes];
   CHECK(hexsave::pack(save, line, sizeof(line)) > 0);
 
   // Cut after the settings. A build that wrote no ornament and no game is a
   // build this one can still take a record and a level from -- which is the
   // whole reason the format has checkpoints instead of a refusal.
-  char truncated[1400];
+  char truncated[hexsave::kMaxLineBytes];
   std::snprintf(truncated, sizeof(truncated), "%d %d %d %d %d %d\n", hexsave::kVersion, save.wins, save.losses,
                 static_cast<int>(save.opponent), static_cast<int>(save.level), save.playAs);
   hexsave::Save back;
@@ -424,7 +445,7 @@ void testAShortLineKeepsWhatItReachedAndDefaultsTheRest() {
   // Cut in the MIDDLE of the position. The record and the ornament survive and
   // the resume does not, which is the rule: a screen is only meaningful with
   // the state behind it.
-  char half[1400];
+  char half[hexsave::kMaxLineBytes];
   const int keep = static_cast<int>(std::strlen(line)) - 200;
   std::memcpy(half, line, static_cast<size_t>(keep));
   half[keep] = '\n';
@@ -461,10 +482,94 @@ void testAFileFromAnotherFormatIsRefusedRatherThanRead() {
   CHECK(hexsave::pack(full, tiny, sizeof(tiny)) == 0);
 }
 
+void testAMatchCountedInMemorySurvivesTheLinkTeardown() {
+  // The failure this stands in for is silent and shipped twice in this fork.
+  // A nearby game is counted by onMatchEnded() in MEMORY -- writeSave() refuses
+  // for the whole length of a match, because the position on screen is the
+  // shared game and the file is what the solo game resumes from -- and then the
+  // teardown reloads the card to put the solo game back. Reload the record with
+  // it and the match is gone: no crash, no log, a tally that never moves.
+  //
+  // The whole sequence, with the card real: a save on the card, a match counted
+  // on top of it, the teardown, the write that teardown is the first moment
+  // for, and the reload after it.
+  hexsave::Save before;
+  before.wins = 4;
+  before.losses = 2;
+  before.hasHistory = true;
+  before.lastWon = false;
+  before.level = hex::Level::Hard;
+  for (int i = 0; i < hex::kCellBytes; ++i) before.lastCells[i] = 0x11;
+
+  char card[hexsave::kMaxLineBytes];
+  CHECK(hexsave::pack(before, card, sizeof(card)) > 0);
+
+  // recordResult() for a match this device won, in memory.
+  hexsave::Record counted;
+  counted.wins = before.wins + 1;
+  counted.losses = before.losses;
+  counted.hasHistory = true;
+  counted.lastWon = true;
+
+  // The teardown reloads the card, which is the step that would clobber it.
+  hexsave::Save reloaded;
+  CHECK(hexsave::unpack(card, reloaded));
+  CHECK(reloaded.wins == before.wins);
+  hexsave::Record onCard;
+  onCard.wins = reloaded.wins;
+  onCard.losses = reloaded.losses;
+  onCard.hasHistory = reloaded.hasHistory;
+  onCard.lastWon = reloaded.lastWon;
+
+  const hexsave::Record kept = hexsave::recordAfterLink(counted, onCard);
+  CHECK(kept.wins == before.wins + 1);
+  CHECK(kept.losses == before.losses);
+  CHECK(kept.lastWon);
+
+  // And it reaches the card, exactly once. Counting it twice is the other half
+  // of the same bug and would read as a device that wins every nearby game
+  // twice over.
+  hexsave::Save after = reloaded;
+  after.wins = kept.wins;
+  after.losses = kept.losses;
+  after.hasHistory = kept.hasHistory;
+  after.lastWon = kept.lastWon;
+  char written[hexsave::kMaxLineBytes];
+  CHECK(hexsave::pack(after, written, sizeof(written)) > 0);
+
+  hexsave::Save resumed;
+  CHECK(hexsave::unpack(written, resumed));
+  CHECK(resumed.wins == before.wins + 1);
+  CHECK(resumed.losses == before.losses);
+  CHECK(resumed.lastWon);
+  // The settings came off the card and were not clobbered in the other
+  // direction: a teardown that kept the whole in-memory Save would have put the
+  // match's board and seat back on the front door as a resumable solo game.
+  CHECK(resumed.level == hex::Level::Hard);
+  CHECK(!resumed.inProgress);
+
+  // A match nobody counted -- the opponent left before a stone went down --
+  // keeps what the card has rather than writing a blank record over it.
+  hexsave::Record nothing;
+  nothing.wins = before.wins;
+  nothing.losses = before.losses;
+  nothing.hasHistory = before.hasHistory;
+  nothing.lastWon = before.lastWon;
+  const hexsave::Record quiet = hexsave::recordAfterLink(nothing, onCard);
+  CHECK(quiet.wins == before.wins);
+  CHECK(quiet.losses == before.losses);
+
+  // And a card somehow further along than the memory is not rolled back.
+  hexsave::Record ahead = onCard;
+  ahead.wins += 3;
+  const hexsave::Record newer = hexsave::recordAfterLink(nothing, ahead);
+  CHECK(newer.wins == ahead.wins);
+}
+
 void testAnImpossiblePositionCostsTheResumeAndNotTheRecord() {
   hexsave::Save save = aSaveWithAGameInIt();
   save.game.toMove = 9;  // not a colour
-  char line[1400];
+  char line[hexsave::kMaxLineBytes];
   CHECK(hexsave::pack(save, line, sizeof(line)) > 0);
   hexsave::Save back;
   CHECK(hexsave::unpack(line, back));
@@ -502,6 +607,164 @@ void testTheSameSeedReturnsTheSameMove() {
     // reproducible rather than only the first one.
     CHECK(first == second);
   }
+
+  // HARD's branch, which the two levels above never reach: RAVE reads the
+  // finished board and UCT exploration is off, so the whole selection is a
+  // different expression and repeating it is a different claim. Through
+  // chooseMoveWith at a budget a suite can afford -- HARD's own thirty thousand
+  // simulations are seconds a test should not spend to ask this.
+  const hexbrain::Settings amaf{400, 0, true, true};
+  uint32_t first = 31337u;
+  uint32_t second = 31337u;
+  const int a = hexbrain::chooseMoveWith(game, amaf, first, *pool);
+  const int b = hexbrain::chooseMoveWith(game, amaf, second, *pool);
+  CHECK(a == b);
+  CHECK(first == second);
+  CHECK(hex::legal(game, a));
+}
+
+// A clock the test controls, so "it stopped when it was told" is a fact rather
+// than a stopwatch reading.
+uint32_t gFakeMs = 0;
+uint32_t gFakeReadings = 0;
+uint32_t gFakeStep = 400;
+uint32_t fakeClock() {
+  // The step is set to just over half the level's budget, so the budget
+  // genuinely runs out on the second chunk. A one millisecond step does not:
+  // the search finishes its whole simulation count in a handful of readings and
+  // the branch this test exists to exercise is never taken -- the test then
+  // passes with the budget check deleted.
+  ++gFakeReadings;
+  gFakeMs += gFakeStep;
+  return gFakeMs;
+}
+
+void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
+  // The count alone is not a budget. The same simulations are a fraction of a
+  // second on a laptop and seconds on the device, and which one you get is a
+  // property of the machine -- so the search runs against a clock the caller
+  // lends, and this proves the clock is actually consulted.
+  //
+  // Every other brain test in this file passes no clock at all, which is what
+  // keeps them deterministic and is also why deleting the budget break left the
+  // whole suite green.
+  auto pool = makePool();
+  hex::Game game;
+  hex::reset(game);
+  CHECK(hex::play(game, hex::cellAt(5, 5)));
+
+  for (int i = 0; i < 3; ++i) {
+    const hex::Level level = static_cast<hex::Level>(i);
+    const hexbrain::Settings settings = hexbrain::settingsFor(level);
+    CHECK(settings.budgetMs > 0);
+    // The ceiling the budgets exist for. Held below it with room, because the
+    // chunk that is running when the clock expires still has to finish.
+    CHECK(settings.budgetMs <= 4500);
+
+    // The same position twice: once with all the time in the world, once with
+    // this clock. The comparison is what makes the assertion able to fail --
+    // "fewer than the count" is also true of a search that simply ran out of
+    // board, and that is not what is being measured.
+    uint32_t seed = 9090u + static_cast<uint32_t>(i);
+    const int unhurried = hexbrain::chooseMove(game, level, seed, *pool, nullptr);
+    const int unhurriedSims = hexbrain::lastSimulations();
+    CHECK(hex::legal(game, unhurried));
+    CHECK(unhurriedSims > 64);
+
+    gFakeMs = 0;
+    gFakeReadings = 0;
+    gFakeStep = settings.budgetMs / 2 + 1;
+    seed = 9090u + static_cast<uint32_t>(i);
+    const int move = hexbrain::chooseMove(game, level, seed, *pool, fakeClock);
+    // Still a legal cell. A search stopped mid-thought that answered with
+    // nothing, or with a cell already holding a stone, is worse than a slow one.
+    CHECK(hex::legal(game, move));
+    // The clock was read, the budget ran out on it, and the search that was
+    // stopped did strictly less work than the one that was not.
+    CHECK(gFakeReadings > 1);
+    CHECK(gFakeMs >= settings.budgetMs);
+    CHECK(hexbrain::lastSimulations() < unhurriedSims);
+    CHECK(hexbrain::lastSimulations() < static_cast<int>(settings.simulations));
+    // And it says how long it believed it spent, which is what the device log
+    // prints beside the count.
+    CHECK(hexbrain::lastMs() >= settings.budgetMs);
+  }
+
+  // With no clock at all it is bounded by the count alone, and nothing is read.
+  gFakeMs = 0;
+  gFakeReadings = 0;
+  uint32_t seed = 4242u;
+  const int move = hexbrain::chooseMove(game, hex::Level::Easy, seed, *pool);
+  CHECK(hex::legal(game, move));
+  CHECK(gFakeReadings == 0);
+  CHECK(hexbrain::lastMs() == 0);
+}
+
+void testEveryLevelIsADifferentPlayer() {
+  // Three levels made of THREE knobs, which is the claim HexBrain.h makes and
+  // the reason the Elo numbers in it are quoted: the budget rises, the playout
+  // policy gains the bridge, and the selection gains RAVE. Asserted here
+  // because all three could collapse into one value with every other test in
+  // this file still green -- a level ladder nothing compares is three names for
+  // one player.
+  const hexbrain::Settings easy = hexbrain::settingsFor(hex::Level::Easy);
+  const hexbrain::Settings normal = hexbrain::settingsFor(hex::Level::Normal);
+  const hexbrain::Settings hard = hexbrain::settingsFor(hex::Level::Hard);
+
+  CHECK(easy.simulations < normal.simulations);
+  CHECK(normal.simulations < hard.simulations);
+  // The clock ladder rises with it, or a level meant to think harder is cut off
+  // before it can.
+  CHECK(easy.budgetMs < normal.budgetMs);
+  CHECK(normal.budgetMs < hard.budgetMs);
+  // Every one of them under the ceiling, HARD included -- it is the only one
+  // that can reach it.
+  CHECK(easy.budgetMs <= 4500);
+  CHECK(normal.budgetMs <= 4500);
+  CHECK(hard.budgetMs <= 4500);
+
+  // And the policies, where the Elo actually came from. EASY is plain UCT with
+  // plain playouts; the bridge arrives at NORMAL; RAVE arrives at HARD and
+  // never without the bridge under it, which is the pairing the measurement was
+  // made with.
+  CHECK(!easy.bridge);
+  CHECK(!easy.amaf);
+  CHECK(normal.bridge);
+  CHECK(!normal.amaf);
+  CHECK(hard.bridge);
+  CHECK(hard.amaf);
+
+  // An out-of-range level is somebody else's bug and must still be playable.
+  const hexbrain::Settings fallback = hexbrain::settingsFor(hex::Level::Count_);
+  CHECK(fallback.simulations > 0);
+  CHECK(fallback.budgetMs <= 4500);
+}
+
+void testTheHandRolledLogarithmIsTheRealOne() {
+  // std::log carries no correctly-rounded guarantee, so UCT's logarithm is
+  // computed in integer fixed point -- which means the one thing standing
+  // between the search and a broken exploration term is this comparison. Return
+  // 0.0 from naturalLog and every other assertion in this suite stays green:
+  // the search still returns legal moves, still repeats on a seed, and still
+  // beats the level below it, because the exploration term merely stops
+  // exploring.
+  CHECK(hexbrain::naturalLogForTest(0) == 0.0);
+  CHECK(hexbrain::naturalLogForTest(1) == 0.0);
+
+  // Across the visit counts a real search reaches: a node's parent has between
+  // two and the whole simulation count.
+  double worst = 0.0;
+  for (uint32_t n = 2; n <= 40000; n = n < 200 ? n + 1 : n + 137) {
+    const double got = hexbrain::naturalLogForTest(n);
+    const double want = std::log(static_cast<double>(n));
+    const double error = got > want ? got - want : want - got;
+    if (error > worst) worst = error;
+    CHECK(error < 1e-4);
+    // Monotone, or the exploration term would prefer a parent it had visited
+    // less. The fixed-point squaring loop is exactly where that could go wrong.
+    CHECK(got > hexbrain::naturalLogForTest(n - 1) - 1e-9);
+  }
+  std::printf("  naturalLog: worst error against std::log %.3g\n", worst);
 }
 
 void testEveryMoveTheBrainOffersIsLegal() {
@@ -565,8 +828,8 @@ void testEveryLevelTakesTheWinAndBlocksTheLoss() {
   }
 }
 
-// One whole game between two settings. `blackSeed` and `whiteSeed` are separate
-// so a series is reproducible move for move.
+// One whole game between two settings, both sides drawing from the same seed as
+// it advances, so a series is reproducible move for move from its first number.
 uint8_t playOneGame(const hexbrain::Settings& black, const hexbrain::Settings& white, uint32_t seed,
                     hexbrain::Pool& pool) {
   hex::Game game;
@@ -662,6 +925,7 @@ void testBackLeavesTheAppOnlyFromTheFrontDoor() {
 }  // namespace
 
 int main() {
+  testAResetBoardIsTheSameBYTESWhateverWasThereBefore();
   testTheEmptyBoardIsEmptyAndBlackMovesFirst();
   testAStonePlacedStaysAndTheTurnPasses();
   testTheNeighbourhoodIsSymmetricAndSixWide();
@@ -677,9 +941,13 @@ int main() {
   testAShortLineKeepsWhatItReachedAndDefaultsTheRest();
   testAFileFromAnotherFormatIsRefusedRatherThanRead();
   testAnImpossiblePositionCostsTheResumeAndNotTheRecord();
+  testAMatchCountedInMemorySurvivesTheLinkTeardown();
 
   testTheStateFitsAPacket();
   testTheSameSeedReturnsTheSameMove();
+  testTheHandRolledLogarithmIsTheRealOne();
+  testEveryLevelIsADifferentPlayer();
+  testTheClockStopsTheSearchWhateverTheSimulationCountSays();
   testEveryMoveTheBrainOffersIsLegal();
   testABudgetOfNothingStillAnswersWithALegalCell();
   testEveryLevelTakesTheWinAndBlocksTheLoss();

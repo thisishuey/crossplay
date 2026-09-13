@@ -6045,14 +6045,49 @@ void testTheHexBoardRunsCornerToCornerAndClearsTheChrome() {
   }
 
   // The chrome is not the board, and neither is the paper below it. A tap that
-  // lands on the header must not place a stone.
+  // lands on the header must not place a stone. The mid-line comes from the
+  // device, not from 240: this file's own rule, and the board it is testing
+  // takes both extents the same way.
+  const int16_t midX = static_cast<int16_t>(device().width / 2);
   int got = -1;
-  CHECK(!hexui::cellAt(layout, 240, toybox::kHeaderHeight / 2, got));
-  CHECK(!hexui::cellAt(layout, 240, device().height - 4, got));
-  // Nor are the two notches the rhombus leaves, which is where the seat cards
-  // and the result screen's buttons go.
-  CHECK(!hexui::cellAt(layout, static_cast<int>(layout.left + layout.a * 33), layout.top + 4, got));
-  CHECK(!hexui::cellAt(layout, layout.left + 4, static_cast<int>(layout.top + layout.h * 32 - 4), got));
+  CHECK(!hexui::cellAt(layout, midX, toybox::kHeaderHeight / 2, got));
+  CHECK(!hexui::cellAt(layout, midX, device().height - 4, got));
+
+  // And every pixel of every control the notches hold. This is the assertion
+  // that was missing when "PLAY AG..." shipped: the board is hit-tested from
+  // geometry BEFORE the interaction table is routed, so a control the rhombus
+  // overlaps is a control whose taps place a stone instead -- drawn, listed in
+  // the table, and unreachable. A screenshot caught the elision; nothing at all
+  // would have caught the overlap.
+  //
+  // Walked point by point rather than corner by corner, because the boundary
+  // this clears is a ZIGZAG of hexagon edges: four corners miss the tooth
+  // between them, which is exactly the shape that would creep back.
+  const fui::Rect notches[] = {hexui::theirCardRect(layout), hexui::yourCardRect(layout),
+                               hexui::againButtonRect(layout), hexui::doneButtonRect(layout)};
+  int probed = 0;
+  int overlapped = 0;
+  for (const fui::Rect& box : notches) {
+    CHECK(box.width > 0 && box.height > 0);
+    for (int16_t y = box.y; y < box.bottom(); ++y) {
+      for (int16_t x = box.x; x < box.right(); ++x) {
+        ++probed;
+        int cell = -1;
+        if (!hexui::cellAt(layout, x, y, cell)) continue;
+        // Reported once, with the point, because "a control overlaps the board"
+        // is unactionable and "(264,103) is cell 5" is a number to move.
+        if (overlapped == 0) {
+          std::printf("      hex notch: (%d,%d) inside a control is cell %d\n", static_cast<int>(x),
+                      static_cast<int>(y), cell);
+        }
+        ++overlapped;
+      }
+    }
+  }
+  // Before believing the probe said no, prove the probe can say yes: a loop
+  // over four empty rects is silent in exactly the same way as a clean one.
+  CHECK(probed > 20000);
+  CHECK(overlapped == 0);
 }
 
 void testTheHexBoardNamesBothSeatsAndTheirEdges() {

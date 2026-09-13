@@ -168,7 +168,7 @@ int HexActivity::chooseComputerMove(const hex::Game& snapshot) {
 void HexActivity::loadSave() {
 #if defined(ARDUINO_ARCH_ESP32) || defined(SIMULATOR)
   if (!Storage.exists(kSavePath)) return;
-  char buffer[1400] = {};
+  char buffer[hexsave::kMaxLineBytes] = {};
   if (Storage.readFileToBuffer(kSavePath, buffer, sizeof(buffer)) == 0) return;
 
   hexsave::Save save;
@@ -216,7 +216,7 @@ void HexActivity::writeSave() {
   save.game = game;
   save.seat = seat;
 
-  char line[1400];
+  char line[hexsave::kMaxLineBytes];
   const int bytes = hexsave::pack(save, line, sizeof(line));
   if (bytes <= 0) {
     LOG_ERR("HEX", "Save line did not fit %d bytes", static_cast<int>(sizeof(line)));
@@ -227,9 +227,21 @@ void HexActivity::writeSave() {
   // place empties the file at open and power lost in that window leaves nothing
   // at all -- and this app writes on every move, which multiplies that window
   // by the length of a game.
-  Storage.writeFile(kSaveTempPath, String(line));
+  //
+  // The temp write's answer is CHECKED, and that is the half a temp file is
+  // useless without: removing the live save before knowing the replacement
+  // exists turns a full card into a lost record and a lost game, which is the
+  // total loss the whole dance is here to avoid.
+  if (!Storage.writeFile(kSaveTempPath, String(line))) {
+    LOG_ERR("HEX", "Save temp write failed; the card keeps the last good save");
+    Storage.remove(kSaveTempPath);
+    return;
+  }
   Storage.remove(kSavePath);
-  Storage.rename(kSaveTempPath, kSavePath);
+  if (!Storage.rename(kSaveTempPath, kSavePath)) {
+    LOG_ERR("HEX", "Save rename failed; the save is gone from the card");
+    Storage.remove(kSaveTempPath);
+  }
 #endif
 }
 
@@ -282,9 +294,15 @@ void HexActivity::takeComputerTurn() {
   const uint32_t took = millis() - began;
   thinking = false;
 
+  // Both of the brain's own numbers, beside the wall clock this task measured.
+  // They are not the same measurement and the difference is the point: `took`
+  // is what the player waited, `lastMs()` is what the search believed it spent
+  // on the clock it was lent, and a gap between them is a search that was
+  // stopped by something other than its own budget.
   const hexbrain::Settings settings = hexbrain::settingsFor(level);
-  LOG_INF("HEX", "search: level %d, %u ms of %u, %d of %u sims (move %u)", static_cast<int>(level),
-          static_cast<unsigned>(took), static_cast<unsigned>(settings.budgetMs), hexbrain::lastSimulations(),
+  LOG_INF("HEX", "search: level %d, %u ms (%u on its own clock) of %u, %d of %u sims (move %u)",
+          static_cast<int>(level), static_cast<unsigned>(took), static_cast<unsigned>(hexbrain::lastMs()),
+          static_cast<unsigned>(settings.budgetMs), hexbrain::lastSimulations(),
           static_cast<unsigned>(settings.simulations), static_cast<unsigned>(game.moveNumber));
 
   if (!hex::play(game, move)) {
@@ -404,7 +422,43 @@ void HexActivity::onLinkEnded() {
   for (int i = 0; i < hex::kMaskBytes; ++i) chain[i] = 0;
   inProgress = false;
   seat = playAs;
+
+  // The match's result is the one thing that must NOT come back off the card.
+  // onMatchEnded() counted it in memory and could not write it -- writeSave()
+  // refuses for the whole length of a match -- so the reload below would take
+  // the pre-match tally straight back over it. The decision is
+  // hexsave::recordAfterLink()'s rather than this file's, because it is a rule
+  // and this is the layer that is not allowed to hold one.
+  hexsave::Record counted;
+  counted.wins = wins;
+  counted.losses = losses;
+  counted.hasHistory = hasHistory;
+  counted.lastWon = lastWon;
+  uint8_t countedCells[hex::kCellBytes];
+  for (int i = 0; i < hex::kCellBytes; ++i) countedCells[i] = lastCells[i];
+
   loadSave();
+
+  hexsave::Record onCard;
+  onCard.wins = wins;
+  onCard.losses = losses;
+  onCard.hasHistory = hasHistory;
+  onCard.lastWon = lastWon;
+
+  const hexsave::Record kept = hexsave::recordAfterLink(counted, onCard);
+  wins = kept.wins;
+  losses = kept.losses;
+  hasHistory = kept.hasHistory;
+  lastWon = kept.lastWon;
+  // The ornament follows whichever record was kept, or the front door draws one
+  // game's board under another game's caption.
+  if (kept.wins == counted.wins && kept.losses == counted.losses) {
+    for (int i = 0; i < hex::kCellBytes; ++i) lastCells[i] = countedCells[i];
+  }
+  // Written now, because the refusal above has just stopped applying and this
+  // is the first moment the counted match can reach the card.
+  writeSave();
+
   goTo(hex::Screen::Menu);
 }
 

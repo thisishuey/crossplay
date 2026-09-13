@@ -15,6 +15,16 @@ int appendInt(char* out, const int capacity, const int used, const int value) {
 
 }  // namespace
 
+Record recordAfterLink(const Record& counted, const Record& onCard) {
+  // Whichever has seen more games. The memory holds the tally the match started
+  // from plus the match itself, so it is never behind the card -- and stating
+  // it as "more games" rather than "the memory, always" makes the function
+  // total: a teardown with nothing counted, which is a match the opponent left
+  // before a stone went down, keeps what the card has instead of writing a
+  // blank record over it.
+  return counted.wins + counted.losses >= onCard.wins + onCard.losses ? counted : onCard;
+}
+
 int pack(const Save& save, char* out, const int capacity) {
   if (out == nullptr || capacity <= 0) return 0;
   const hex::Game& game = save.game;

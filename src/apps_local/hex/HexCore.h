@@ -102,6 +102,13 @@ struct Game {
   uint8_t winner;
   // The stone just played, so the board can mark it. kNoCell before the first.
   uint8_t lastMove;
+  // Named rather than left to the compiler, and zeroed by reset(). `moveNumber`
+  // wants two-byte alignment, so without this the byte before it is PADDING --
+  // which reset() never writes, which travels on the wire, and which makes two
+  // games that are identical in every field compare unequal under memcmp. The
+  // link layer copies this struct as bytes; a byte nobody owns is a byte that
+  // eventually differs.
+  uint8_t reserved;
   uint16_t moveNumber;
 
   uint8_t at(const int index) const {

@@ -232,6 +232,8 @@ void toyboxChrome(toybox::Screen& screen, const char* title, const char* rightLa
   screen.insetContent(fui::Insets{toybox::kGutter * 3, toybox::kMargin, toybox::kMargin, toybox::kMargin});
 }
 
+}  // namespace
+
 // The two cards, in the notches the board leaves. Returned rather than drawn
 // here so the board and the result screen place them identically.
 //
@@ -253,31 +255,29 @@ constexpr int16_t kCardColumns = 17;
 constexpr int16_t kWideButtonColumns = 23;
 constexpr int16_t kButtonColumns = 15;
 
-fui::Rect theirCard(const Layout& layout) {
+fui::Rect theirCardRect(const Layout& layout) {
   const int16_t width = static_cast<int16_t>(layout.a * kCardColumns);
   const int16_t height = static_cast<int16_t>(layout.h * 4);
   return fui::makeRect(static_cast<int16_t>(layout.left + layout.a * 34 - width), layout.top, width, height);
 }
 
-fui::Rect yourCard(const Layout& layout) {
+fui::Rect yourCardRect(const Layout& layout) {
   const int16_t width = static_cast<int16_t>(layout.a * kCardColumns);
   const int16_t height = static_cast<int16_t>(layout.h * 4);
   return fui::makeRect(layout.left, static_cast<int16_t>(layout.top + layout.h * 32 - height), width, height);
 }
 
-fui::Rect resultAgainButton(const Layout& layout) {
+fui::Rect againButtonRect(const Layout& layout) {
   const int16_t width = static_cast<int16_t>(layout.a * kWideButtonColumns);
   return fui::makeRect(static_cast<int16_t>(layout.left + layout.a * 34 - width), layout.top, width,
                        toybox::kPillHeight);
 }
 
-fui::Rect resultDoneButton(const Layout& layout) {
+fui::Rect doneButtonRect(const Layout& layout) {
   const int16_t width = static_cast<int16_t>(layout.a * kButtonColumns);
   return fui::makeRect(static_cast<int16_t>(layout.left + layout.a * 34 - width),
                        static_cast<int16_t>(layout.top + toybox::kPillHeight + 8), width, toybox::kPillHeight);
 }
-
-}  // namespace
 
 Layout boardLayout(const fui::DeviceContext& device) {
   Layout layout;
@@ -531,8 +531,8 @@ void buildBoard(toybox::Screen& screen, const BoardModel& model) {
   const char* yourName = sharedDevice ? (yours == hex::kBlack ? "BLACK" : "WHITE") : "YOU";
   const char* theirName = sharedDevice ? (theirs == hex::kBlack ? "BLACK" : "WHITE")
                                        : (model.opponentName != nullptr ? model.opponentName : "THEM");
-  seatCard(screen, theirCard(layout), theirs, theirName, model.game.toMove == theirs && !hex::over(model.game));
-  seatCard(screen, yourCard(layout), yours, yourName, model.game.toMove == yours && !hex::over(model.game));
+  seatCard(screen, theirCardRect(layout), theirs, theirName, model.game.toMove == theirs && !hex::over(model.game));
+  seatCard(screen, yourCardRect(layout), yours, yourName, model.game.toMove == yours && !hex::over(model.game));
 }
 
 void buildResult(toybox::Screen& screen, const ResultModel& model) {
@@ -553,7 +553,7 @@ void buildResult(toybox::Screen& screen, const ResultModel& model) {
   // and the header has already named the winner, so the card carries the one
   // thing a finished Hex board still has to explain: which pair of edges the
   // connection on the panel was joining.
-  seatCard(screen, yourCard(layout), yours, yourName, won == yours);
+  seatCard(screen, yourCardRect(layout), yours, yourName, won == yours);
 
   // The two doors go in the notch the opponent's card had. The board is the
   // whole panel by design, so a band reserved for buttons would cost every cell
@@ -562,13 +562,13 @@ void buildResult(toybox::Screen& screen, const ResultModel& model) {
   again.label = "PLAY AGAIN";
   again.action = ActionAgain;
   again.borderEdges = fui::EdgesNone;
-  screen.button(again, resultAgainButton(layout));
+  screen.button(again, againButtonRect(layout));
 
   fui::ButtonProps done;
   done.label = "DONE";
   done.action = ActionDone;
   done.borderEdges = fui::EdgesNone;
-  screen.button(done, resultDoneButton(layout));
+  screen.button(done, doneButtonRect(layout));
 }
 
 }  // namespace hexui

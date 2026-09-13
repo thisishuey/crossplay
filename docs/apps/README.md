@@ -64,6 +64,7 @@ The on-disk shapes. Read these before changing a writer.
 | [`study-anki-compatibility.md`](study-anki-compatibility.md) | What converts, what is reduced, what stays behind. |
 | [`trivia-pack-format.md`](trivia-pack-format.md) | |
 | [`xkcd-pack-format.md`](xkcd-pack-format.md) | |
+| [`wikipedia-pack-format.md`](wikipedia-pack-format.md) | What `build_pack.py` writes under `/wikipedia/` and what the app reads back. |
 
 ## Decision records for things that shipped
 
@@ -83,6 +84,7 @@ top; the rest is this row.
 | [`wallpapers-phone-flow.md`](wallpapers-phone-flow.md) | From a picture on a phone to the sleep screen. |
 | [`wallpapers-shuffle.md`](wallpapers-shuffle.md) | Choosing a set and letting it take turns. |
 | [`xkcd-viewing-plan.md`](xkcd-viewing-plan.md) | Reworking how comics are shown. |
+| [`wikipedia-plan.md`](wikipedia-plan.md) | Fifty thousand articles on the card, argued before the code. |
 
 ## Generated, not written
 

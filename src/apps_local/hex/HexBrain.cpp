@@ -124,7 +124,15 @@ uint8_t playout(uint8_t board[hex::kCells], uint8_t toMove, uint32_t& seed, cons
 
   // One queue a colour, indexed by the colour value itself so there is no
   // second mapping to keep straight.
-  uint8_t saved[3][hex::kCells];
+  //
+  // A placement can push up to six saving cells and a turn pops about one, so
+  // the queues grow faster than they drain and an unbounded push would run off
+  // the end of a 121-entry array inside the hottest loop in the app. The bound
+  // is a DROP rather than a bigger array: a bridge response is a hint, the
+  // playout is one random sample of many, and the oldest hints in a queue this
+  // deep are about bridges the board has long since filled in.
+  constexpr int kSaveDepth = hex::kCells;
+  uint8_t saved[3][kSaveDepth];
   int savedCount[3] = {0, 0, 0};
   int head = 0;
   uint8_t colour = toMove;
@@ -150,6 +158,7 @@ uint8_t playout(uint8_t board[hex::kCells], uint8_t toMove, uint32_t& seed, cons
       if (pattern.partner == hex::kNoCell) continue;
       if (board[pattern.end[0]] != them || board[pattern.end[1]] != them) continue;
       if (board[pattern.partner] != hex::kEmpty) continue;
+      if (savedCount[them] >= kSaveDepth) break;
       saved[them][savedCount[them]++] = pattern.partner;
     }
     colour = hex::other(colour);
@@ -386,5 +395,7 @@ uint8_t playoutForTest(uint8_t board[hex::kCells], const uint8_t toMove, uint32_
 }
 
 uint8_t winnerOfFilledForTest(const uint8_t board[hex::kCells]) { return winnerOfFilled(board); }
+
+double naturalLogForTest(const uint32_t value) { return naturalLog(value); }
 
 }  // namespace hexbrain

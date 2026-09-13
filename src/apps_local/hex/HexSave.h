@@ -58,10 +58,51 @@ struct Save {
   uint8_t seat = hex::kBlack;
 };
 
+// What a packed line needs, with room: the version and five settings, two flags
+// and 31 ornament bytes, then the game -- 31 packed cells, 125 union-find
+// parents and five more fields -- each written as up to three digits and a
+// space, plus the newline.
+//
+// Stated HERE rather than spelled at each buffer, and that is not tidiness. A
+// caller whose buffer is too small gets `pack()` returning 0 and, on the way
+// back in, a line that stops early -- which this format is built to ACCEPT.
+// So the failure of a buffer that drifted below the real length is not an
+// error anybody sees: it is a save that quietly stops carrying the game.
+constexpr int kMaxLineBytes = 1400;
+
+// The tally and the ornament, as the four facts a link teardown has to decide
+// about. Split out of `Save` as a type of its own because that decision is the
+// one piece of this file's behaviour that is neither packing nor parsing, and
+// it is the piece that was wrong.
+struct Record {
+  int wins = 0;
+  int losses = 0;
+  bool hasHistory = false;
+  bool lastWon = false;
+};
+
+// The record to hold after a match ends and the solo game is restored.
+//
+// `counted` is what this device has in MEMORY: `onMatchEnded()` counted the
+// match there and could not write it, because writing is refused for the whole
+// length of a match -- the position on screen is the shared game and the file
+// is what the solo game resumes from. `onCard` is what the reload at teardown
+// just brought back, which is the tally as it stood BEFORE the match.
+//
+// Whichever has seen more games wins. Without this the reload takes the
+// pre-match tally straight back over the counted one three lines later: no
+// crash, no log, just a record that never moves -- the same silence five games
+// in this fork shipped by counting in `gameLoop()` instead of `onMatchEnded()`,
+// one door further along.
+Record recordAfterLink(const Record& counted, const Record& onCard);
+
 // Text, space separated, one line. Returns the bytes written, or 0 when the
 // buffer could not hold it -- never a truncated line, because a truncated line
 // parses as a shorter save rather than as a failure, and this file's whole
 // tolerance rule is built on a short line being honest.
+//
+// `capacity` should be kMaxLineBytes; anything smaller is a buffer that may
+// silently cost the game in progress.
 int pack(const Save& save, char* out, int capacity);
 
 // Parses what pack() wrote, including a line written by a build with fewer

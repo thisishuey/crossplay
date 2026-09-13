@@ -160,16 +160,30 @@ are deliberately out of scope: they need a solver and a pattern database, and
 what they buy is invisible to anybody who is not already a Hex player.
 
 The search runs on a **task of its own, pinned to core 1**, so a four-second
-think cannot starve the core the system watchdog looks at, and `thinking` holds
-the device awake while it runs. Its node pool is 49KB, taken in `onEnter()` and
+think cannot starve the core the system watchdog looks at. `thinking` is
+returned from `preventAutoSleep()`, and what that covers is narrower than it
+sounds: the loop task is blocked on the search task's notification while the
+search runs, so nothing polls the sleep guard during it. The flag is true across
+the repaint that announces THINKING -- the pass before the search starts, and
+the last pass the sleep timer can see -- so it stops the device sleeping INTO a
+search rather than during one. A four-second think is short enough that the
+timer cannot expire inside it anyway. Its node pool is 49KB, taken in `onEnter()` and
 freed in `onExit()`; with no pool the app still plays, with a centre-weighted
 legal move and a line in the log.
 
 ## What is written down
 
-`/.crosspoint/hex.sav`, one line, written to a temp file and renamed. It holds
-the record, the settings, the last finished board for the front door's ornament,
-and the game in progress.
+`/.crosspoint/hex.sav`, one line, written to a temp file and renamed **only if
+the temp write succeeded**. That second half is the half a temp file is useless
+without: removing the live save before knowing the replacement exists turns a
+full card into a lost record and a lost game, which is the total loss the whole
+dance exists to avoid. The line's length is `hexsave::kMaxLineBytes`, stated
+once, because a buffer that drifted below it would not fail loudly -- `pack()`
+would return nothing and the format's own short-line tolerance would quietly
+accept a save that had stopped carrying the game.
+
+It holds the record, the settings, the last finished board for the front door's
+ornament, and the game in progress.
 
 The front door draws whichever of those two boards it has, and an EMPTY one when
 it has neither. Empty rather than nothing: a fresh device showed a four hundred
@@ -199,3 +213,12 @@ The result is recorded in `onMatchEnded()`, never at the end of `gameLoop()` --
 the link layer stops giving the game the pass the moment a match ends, so
 anything after that point is unreachable in multiplayer. Five games in this fork
 shipped counting zero matches for exactly that reason.
+
+**And it has to survive the teardown**, which is the same zero one door further
+along. `onMatchEnded()` counts the match in memory and cannot write it -- the
+save is refused for the whole length of a match -- and then `onLinkEnded()`
+reloads the card to put the solo game back. Reload the record with it and the
+match is gone, silently. `hexsave::recordAfterLink()` is that decision, kept
+freestanding so `host-tests/hex` can drive the whole sequence: a card, a match
+counted on top of it, the teardown, the write teardown is the first moment for,
+and the reload after it.

@@ -40,6 +40,7 @@ void reset(Game& game) {
   game.toMove = kBlack;
   game.winner = kEmpty;
   game.lastMove = kNoCell;
+  game.reserved = 0;
   game.moveNumber = 0;
 }
 

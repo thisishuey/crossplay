@@ -119,6 +119,21 @@ void cellCentre(const Layout& layout, int cell, int16_t& cx, int16_t& cy);
 bool cellAt(const Layout& layout, int x, int y, int& cell);
 int16_t stoneRadius(const Layout& layout);
 
+// The four controls the rhombus's two notches hold: a seat card in each on the
+// board screen, and on the result screen your card plus the two doors.
+//
+// Exported so host-tests/ui can walk every pixel of them through `cellAt()` and
+// demand it answers no. The board is hit-tested from geometry BEFORE the
+// interaction table is routed, so a control the rhombus overlaps is a control
+// whose taps place a stone instead -- drawn, listed in the table, and
+// unreachable, with nothing on the panel to say why. The notch is a TRIANGLE,
+// so how far left a control may start depends on how tall it is, which is why
+// the two doors are stacked and take different widths.
+fui::Rect theirCardRect(const Layout& layout);
+fui::Rect yourCardRect(const Layout& layout);
+fui::Rect againButtonRect(const Layout& layout);
+fui::Rect doneButtonRect(const Layout& layout);
+
 void buildMenu(toybox::Screen& screen, const MenuModel& model);
 void buildSettings(toybox::Screen& screen, const SettingsModel& model);
 void buildBoard(toybox::Screen& screen, const BoardModel& model);

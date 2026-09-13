@@ -26,9 +26,16 @@ class HexActivity final : public linkplay::LinkActivity {
   void onExit() override;
 
   // A search is not idleness. LinkActivity already holds the device awake for
-  // the length of a match; a four-second think looks exactly the same to the
-  // sleep timer and has to be said separately, because a solo game is not a
-  // match and `wantsAwake()` is false throughout it.
+  // the length of a match; a solo game is not a match and `wantsAwake()` is
+  // false throughout it.
+  //
+  // What `thinking` covers is narrower than it looks, and the honest version is
+  // worth writing down: the search itself runs with the loop task blocked on
+  // the search task's notification, so nothing polls this while it runs. The
+  // flag is true across the repaint that announces THINKING, which is the pass
+  // before the search starts and the pass the sleep timer can still see -- so
+  // this stops the device sleeping INTO a search, not during one. A four-second
+  // think is short enough that the timer cannot expire inside it anyway.
   bool preventAutoSleep() override { return thinking || linkplay::LinkActivity::preventAutoSleep(); }
 
  protected:

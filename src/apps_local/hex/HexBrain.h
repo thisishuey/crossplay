@@ -125,4 +125,13 @@ uint8_t playoutForTest(uint8_t board[hex::kCells], uint8_t toMove, uint32_t& see
 // is never "nobody", and the suite asserts it over random fills.
 uint8_t winnerOfFilledForTest(const uint8_t board[hex::kCells]);
 
+// Exposed for the suite: the hand-rolled natural logarithm the UCT term is
+// built on, checked against std::log across the visit counts a real search
+// reaches. It exists because std::log carries no correctly-rounded guarantee
+// and two libms disagreeing in the last bit would make one seed pick different
+// moves on a laptop and on the chip -- and a replacement for a library function
+// that nothing compares against is a replacement that can quietly return zero
+// and leave every assertion in the suite green.
+double naturalLogForTest(uint32_t value);
+
 }  // namespace hexbrain

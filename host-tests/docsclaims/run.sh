@@ -488,6 +488,30 @@ for fn in sorted(os.listdir(os.path.join(root, "docs"))):
     check(f"`{fn}`" in docs_readme or f"({fn})" in docs_readme or f"/{fn}" in docs_readme,
           "docs/README.md never names a doc in its own directory", fn)
 
+# docs/apps/ is the same index one directory down, and nothing gated it: its
+# count sat at "34 files" while there were 38, and `go.md` went unlinked from
+# the day Go shipped. Both are silent -- an index that omits a file reads
+# exactly like a directory that does not have one.
+#
+# The count is DERIVED here rather than compared against a literal, for the
+# reason this whole file exists: a second copy of a number is the copy that
+# rots. Every file in the directory has to be named, README.md excepted, which
+# is the same rule the loop above applies to docs/.
+apps_dir = os.path.join(root, "docs/apps")
+apps_readme = read("docs/apps/README.md")
+apps_files = sorted(fn for fn in os.listdir(apps_dir) if fn != "README.md")
+
+m = re.search(r"One directory, (\S+) files", apps_readme)
+check(bool(m), "docs/apps/README.md has no 'One directory, N files' claim to check")
+if m:
+    said = number(m.group(1))
+    check(said == len(apps_files), "docs/apps/README.md file count is stale",
+          f"says {m.group(1)}, the directory holds {len(apps_files)}")
+
+for fn in apps_files:
+    check(f"`{fn}`" in apps_readme or f"({fn})" in apps_readme,
+          "docs/apps/README.md never names a file in its own directory", fn)
+
 print(f"{checks} checks, {failed} failed")
 sys.exit(1 if failed else 0)
 PY
