@@ -10,7 +10,7 @@ whole image. There is no device in the loop and no window to click: agents drive
 it with a **scripted input string** and get **BMP/PNG screenshots** back.
 
 `scripts_local/sim-shot.sh` is the launcher. **`.claude/skills/run-crossplay-sim/drive.py`
-is what you should call** — it wraps sim-shot.sh with the autostart title list,
+is what you should call**: it wraps sim-shot.sh with the autostart title list,
 a verdict on every screenshot, the landscape tap arithmetic, and the `xvfb-run`
 wrapper that landscape screens do not render correctly without.
 
@@ -23,7 +23,7 @@ apt-get install -y libsdl2-dev xvfb
 ```
 
 `.claude/hooks/session-start.sh` installs `libsdl2-dev` (with `pio`, `uv` and
-Pillow) on every session start, but **not `xvfb`** — that is in the web
+Pillow) on every session start, but **not `xvfb`**, which is in the web
 container's base image by luck, not by the hook. `xvfb` is not optional; see
 Gotchas. Run the line above if `xvfb-run` is missing, and `drive.py` will warn
 rather than quietly clip if it is.
@@ -33,18 +33,18 @@ rather than quietly clip if it is.
 No separate step: `drive.py shot` builds before every run, under a per-tree
 lock. Cold, in a fresh container, the first run took **~2.5 minutes** (most of
 it fetching the pinned `crosspoint-simulator` library). After that every
-iteration — edit, rebuild, run, screenshot — is **~19 seconds**, and it is 19
+iteration (edit, rebuild, run, screenshot) is **~19 seconds**, and it is 19
 seconds whether you changed one file or none: the fixed cost is PlatformIO's
 dependency scan and the link, not the compile.
 
 To build without running (1m47s measured, from a tree whose `.pio` was already
-populated — the driver's own build path is consistently faster):
+populated; the driver's own build path is consistently faster):
 
 ```bash
 pio run -e simulator_x4_pro
 ```
 
-Never `pio run` bare — `default_envs = default` is upstream's ESP32-C3 target.
+Never `pio run` bare: `default_envs = default` is upstream's ESP32-C3 target.
 
 ## Run (agent path)
 
@@ -94,14 +94,14 @@ screenshot check:
 
 A `--app` title that matches nothing **exits 1** and says so. That check exists
 because the firmware treats a miss as routine: it logs, stays on Home, and the
-run otherwise succeeds. `--app SOLITARE` photographed Home at 4.11% ink — above
+run otherwise succeeds. `--app SOLITARE` photographed Home at 4.11% ink, above
 the blank threshold, so only the autostart line catches it.
 
-`ink` is the fraction of non-background pixels. **`MISSING` or `BLANK` exits 1** —
-both are silent in sim-shot.sh and both look exactly like an app that failed to
+`ink` is the fraction of non-background pixels. **`MISSING` or `BLANK` exits 1**.
+Both are silent in sim-shot.sh and both look exactly like an app that failed to
 draw. Measured range on this tree: a shelf page or app menu is 17-21%, a dealt
-Solitaire board 18%, and the sparsest real frame the firmware draws — the boot
-splash, a logo and two words — is 2.03%. The threshold is 0.5%.
+Solitaire board 18%, and the sparsest real frame the firmware draws (the boot
+splash, a logo and two words) is 2.03%. The threshold is 0.5%.
 
 Useful flags: `--trace 'REGEX'` replaces the log filter (`--trace .` for the
 whole log; the default is `Entering activity|[ERR]`, plus `Autostart` whenever
@@ -135,7 +135,7 @@ rotated, so only the input needs this.
 ```
 
 One labelled strip. Bugs in the relationship between two states are invisible in
-unrelated stills — render the awkward ones on purpose (something selected, a
+unrelated stills, so render the awkward ones on purpose (something selected, a
 list at its longest, a container empty).
 
 ### Sleep and wake
@@ -186,17 +186,17 @@ first, which you want whenever a stale save would move the taps.
 
 `./scripts_local/dev.sh` opens a window and rebuilds on every change;
 `./scripts_local/sim.sh` is a one-shot launch. Both need a real display and are
-useless headless — the window opens into the offscreen driver and nobody sees
+useless headless: the window opens into the offscreen driver and nobody sees
 it. Not verified here.
 
 ## Test
 
 ```bash
-bash host-tests/simcatchup/run.sh    # 0s, 7 checks — the sim patch suite
+bash host-tests/simcatchup/run.sh    # 0s, 7 checks: the sim patch suite
 ```
 
 `./scripts_local/check.sh --tests` is the full host gate; read its verdict with
-`grep -o 'CHECKSH-VERDICT: [a-z-]*'`, never `tail -1` or `$?`. Not run here — it
+`grep -o 'CHECKSH-VERDICT: [a-z-]*'`, never `tail -1` or `$?`. Not run here; it
 is 15-25 minutes.
 
 ## Gotchas
@@ -205,10 +205,10 @@ is 15-25 minutes.
   falls back to its `offscreen` video driver, whose window does not honour
   `SDL_SetWindowSize`. An app that turns the panel landscape renders into a
   surface still 480 wide, and the screenshot comes back as the left 480 columns
-  with the remaining 320 flat black — which reads as the app failing to draw
+  with the remaining 320 flat black, which reads as the app failing to draw
   half of itself. `drive.py shot` adds `xvfb-run -a` for you when `DISPLAY` is
   unset; `sim-shot.sh` and `sim-link.sh` called directly do not, so wrap them
-  yourself. Portrait shots are byte-identical either way — same MD5, verified —
+  yourself. Portrait shots are byte-identical either way (same MD5, verified),
   which is why this goes unnoticed until the first landscape app.
 
 - **`fs_agent/` persists between runs.** It is the agent's SD card and every run
@@ -218,7 +218,7 @@ is 15-25 minutes.
   whose starting state matters. (It is gitignored, along with `qa-artifacts/`.)
 
 - **The first run leaves an untracked 105MB `.pio-cache/` in the repo root.**
-  `lib-sim.sh` points PlatformIO's shared object cache at the *workspace* — the
+  `lib-sim.sh` points PlatformIO's shared object cache at the *workspace*, the
   directory above the trees, found by walking up for a `.xteink-workspace`
   marker. A single clone with no marker falls back to the repo's own parent
   resolution and lands inside the checkout. `.gitignore` covers `.pio`, not
@@ -226,7 +226,7 @@ is 15-25 minutes.
   cheap) but never `git add -A` it.
 
 - **A screenshot scheduled after `QUIT` is never written**, and sim-shot.sh says
-  nothing about it — it only converts the BMPs that happen to exist. `drive.py`
+  nothing about it: it only converts the BMPs that happen to exist. `drive.py`
   fails on it instead. Put `QUIT` after your last shot, with a margin.
 
 - **A screenshot path outside the out-dir silently produces nothing.** The
@@ -248,18 +248,18 @@ is 15-25 minutes.
 - **Five apps never appear in the activity trace.** `Entering activity: X` comes
   from `Activity::onEnter`, and an app whose `onEnter` override does not call the
   base never logs it: **D&DIAGRAMS, INSIDER, MURDLE, PICROSS and SOLITAIRE**. So
-  "drive some taps, then grep the trace for `Entering activity: X`" — the usual
-  regression check — silently never matches for those five, and reads as the app
+  "drive some taps, then grep the trace for `Entering activity: X`", the usual
+  regression check, silently never matches for those five, and reads as the app
   failing to open. `[STACK] X left ...` is not a fallback either: it prints only
   on a new worst watermark, so an app that does not go deeper than an earlier one
   stays silent too. For `--app` runs the reliable line is
   `[SHELF] Autostart into <TITLE>`, which `drive.py` filters in and checks for
-  you. (`sim-shot.sh` called directly hides it — its default filter is
+  you. (`sim-shot.sh` called directly hides it; its default filter is
   `Entering activity|[ERR]`.)
 
 - **`No glyph for codepoint` in the trace is a layout bug, and sim-shot.sh exits
   1 on it.** Codepoint 8230 is the ellipsis the SDK truncates with, which the
-  Toybox cuts above 10px do not carry — so an overflowing line does not clip, it
+  Toybox cuts above 10px do not carry, so an overflowing line does not clip: it
   just stops at a plausible place and the screenshot looks fine. Anything else is
   unsanitised text reaching the rasteriser.
 
