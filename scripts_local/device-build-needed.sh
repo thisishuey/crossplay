@@ -239,6 +239,14 @@ classify() {
     # wording and exactly right about its firmware.
     docs/*|site/*|host-tests/*|server/*|tools_local/*) echo "no no"   ;;
     .github/*|.githooks/*|.skills/*|bin/*)            echo "no no"   ;;
+
+    # Agent tooling written into the repository by an installer rather than by
+    # hand: BMad's skills for Claude Code and Codex, and the module data they
+    # read. Nothing in a device build opens them and no release carries them,
+    # which is the argument .skills/ above makes for itself. They are their own
+    # row because an installer rewrites the whole set on every update, and the
+    # next one should not have to find its way into somebody else's line.
+    .claude/*|.agents/*|_bmad/*)                      echo "no no"   ;;
   esac
 }
 
