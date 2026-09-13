@@ -59,8 +59,10 @@ This fork exists to add games and small tools under `src/apps_local/`, to be sen
 - Run `pio check --fail-on-defect high` before a PR -- CI runs cppcheck, check.sh does not.
 - `./bin/clang-format-fix -g` formats git-modified files and needs clang-format 21 or
   newer. Never invoke clang-format directly.
-- Per clone, once: `git submodule update --init --recursive` (builds fail on missing
-  headers without `freeink-sdk/`) and `git config core.hooksPath .githooks`.
+- Every session runs in a fresh, ephemeral environment, so start by running
+  `git submodule update --init --recursive` (builds fail on missing headers without
+  `freeink-sdk/`) and `git config core.hooksPath .githooks`. Neither survives the
+  container, and nothing else works until both have run.
 
 ## Conventions that differ from defaults
 
@@ -97,12 +99,12 @@ This fork exists to add games and small tools under `src/apps_local/`, to be sen
 - Seed `fs_agent/.crosspoint/` before screenshotting, and set `CROSSPLAY_AUTOSTART=<title>`
   rather than relying on a tap sequence -- the same taps land on a different game on
   another machine.
-- GitHub Actions is disabled repo-wide on this fork, because it inherited workflow files
-  when it was forked. No PR here gets CI of any kind until someone enables it in the
-  Actions tab, so local `check.sh` is the only gate that runs.
-- Enabling Actions turns on all ten workflows at once, including upstream's `ci.yml` and
-  `pr-formatting-check.yml` (both marked active): disable those two individually first, or
-  every PR draws ESP32-C3 builds and a semantic-title check CrossPlay abandoned.
+- Keep upstream's `ci.yml`, `pr-formatting-check.yml` and `pr-firmware-links.yml` switched
+  off in the Actions tab. They are upstream's, and they draw ESP32-C3 builds plus a
+  semantic-title check CrossPlay abandoned. `crossplay-ci.yml` is the one that matters.
+- The site deploys through Vercel, configured in `site/vercel.json`, not through any
+  workflow. It cannot move to GitHub Pages: `site/api/` holds six serverless functions,
+  and the emulator needs COOP/COEP headers and pre-brotli assets that Pages cannot serve.
 - This clone has no remote for `ma-r-s/crossplay`, so every script resolving
   `origin/xteink` (`wt.sh`, `check.sh`, `device-build-needed.sh`) measures against this
   fork, not the upstream one.
