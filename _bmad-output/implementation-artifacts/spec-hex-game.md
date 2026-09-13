@@ -2,7 +2,8 @@
 title: 'Hex: the connection game, for the game shelf'
 type: 'feature'
 created: '2026-09-13'
-status: 'draft'
+status: 'in-progress'
+baseline_commit: '0a99092e29aafdcb4613837391d578e02c2ee59f'
 route: 'dispatch'
 review_loop_iteration: 0
 context: ['{project-root}/docs/shelf.md', '{project-root}/docs/building-apps.md']
