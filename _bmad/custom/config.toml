@@ -5,3 +5,17 @@
 #
 # [agents.bmad-agent-pm]
 # description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# ── Pinned values missing from installer-generated _bmad/config.toml ──
+# render_skill.py resolves {{.key}} tokens by searching the merged TOML for a
+# key of that name. Two keys the skills reference are emitted only into the
+# per-module YAML configs (_bmad/core/config.yaml, _bmad/bmm/config.yaml),
+# which the renderer does not read, so every skill using them halted with
+# "missing config value". Values below mirror those YAML files verbatim.
+# Keep each key defined exactly once: the renderer errors on duplicates.
+
+[core]
+communication_language = "English"
+
+[modules.bmm]
+user_skill_level = "intermediate"
