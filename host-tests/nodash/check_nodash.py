@@ -41,6 +41,26 @@ ALLOWED = {
     "server/read-bridge/tests/test_api.py",
 }
 
+# Directory trees that arrive from a generator rather than being written here.
+# Same rule as ALLOWED: each needs a reason, and each names the narrowest prefix
+# that covers the generated files and nothing else.
+ALLOWED_TREES = (
+    # BMad Method, written into the repository by its own installer and
+    # overwritten wholesale on every update -- `_bmad/config.toml` opens by
+    # saying so. This rule is about what the fork writes, and a rewrite here is
+    # undone by the next install, so it would go red again on a schedule nobody
+    # controls. The prefixes name `skills/bmad-` rather than `.claude/` so that
+    # everything this fork does write under those directories -- the session
+    # hook, settings.json, any skill written here -- stays covered.
+    ".agents/skills/bmad-",
+    ".claude/skills/bmad-",
+    "_bmad/",
+)
+
+
+def generated(path):
+    return path.startswith(ALLOWED_TREES)
+
 
 def upstream_owns(path):
     return subprocess.run(
@@ -54,7 +74,7 @@ def main():
     checks = 0
     failed = 0
     for rel in tracked:
-        if not rel or rel in ALLOWED:
+        if not rel or rel in ALLOWED or generated(rel):
             continue
         f = ROOT / rel
         if not f.is_file():
