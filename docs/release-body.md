@@ -1,9 +1,9 @@
 [Install it](https://crossplay.ma-r-s.com/#get) · [which file, and by hand](https://github.com/ma-r-s/crossplay/blob/xteink/docs/install.md) · [earlier releases](https://github.com/ma-r-s/crossplay/blob/xteink/docs/release-notes.md)
 
-### What is new in 1.13.0
+### What is new in 1.14.0-fork1789340977
 
-- Go. Nine by nine or thirteen by thirteen, against the device, someone next to you, or someone nearby.
-- Its opponent is michi-c2, which on MEDIUM plays level with GNU Go 3.8 at full strength.
-- A move takes at most 1.2, 2.5 or 4 seconds, by the level you picked.
-- The level is how hard it thinks. Handicap, colour and board are yours to set separately.
-- The front door draws the game you are in, and RESUME has a bin on the end of it.
+- Hex. Eleven by eleven, against the device, someone next to you, or someone nearby.
+- Place a stone, join your two edges. There are no captures, and the game cannot be drawn.
+- Three levels. The hardest one plays differently, not just for longer.
+- A move takes at most 0.8, 2.5 or 4.5 seconds, by the level you picked.
+- The shelf goes to 22 games, and Hex is the eleventh that plays over PLAY NEARBY.
