@@ -24,8 +24,10 @@
 // byte board, a 121 byte order, two 121 byte bridge queues and a 121 byte seen
 // map, about 700 bytes, on top of the descent's 244 byte path.
 //
-// Sixteen kilobytes is therefore about twenty times what the deepest path
-// needs. It is not eight, which is what the Arduino loop task gets, because the
+// scripts_local/stack-budget.sh measures the deepest path the compiler can see
+// at 1792 bytes, so sixteen kilobytes is about nine times what it needs -- the
+// estimate above is optimistic, and the measurement is the number to trust. It
+// is not eight kilobytes, which is what the Arduino loop task gets, because the
 // margin is the point: the loop task is also running the render path, and an
 // overflow there is a reboot with no log line to say why.
 #define HEX_SEARCH_TASK_STACK 16384
