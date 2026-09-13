@@ -22,6 +22,7 @@
 #include "forehead/ForeheadActivity.h"
 #include "go/GoActivity.h"
 #include "hackernews/HackerNewsActivity.h"
+#include "hex/HexActivity.h"
 #include "insider/InsiderActivity.h"
 #include "instapaper/InstapaperActivity.h"
 #include "jaipur/JaipurActivity.h"
@@ -70,6 +71,7 @@ constexpr shelf::Item kGames[] = {
     {"TRIVIA", &icon_trivia_32, &TriviaActivity::create},
     {"WAVELENGTH", &icon_wavelength_32, &WavelengthActivity::create},
     {"GO", &icon_go_32, &GoActivity::create},
+    {"HEX", &icon_hex_32, &HexActivity::create},
 };
 constexpr shelf::Item kApps[] = {
     {"STUDY", &icon_study_32, &StudyActivity::create},
