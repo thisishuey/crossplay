@@ -21,7 +21,7 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
-### 1.14.0
+### 1.14.0-hx1789340977
 
 - Hex. Eleven by eleven, against the device, someone next to you, or someone nearby.
 - Place a stone, join your two edges. There are no captures, and the game cannot be drawn.
