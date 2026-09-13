@@ -88,30 +88,30 @@ multiplayer is an action, per `chess/ChessScreens.h:35-42`.
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/apps_local/hex/HexCore.h/.cpp` -- board model, 6-neighbour adjacency, union-find win
+- [x] `src/apps_local/hex/HexCore.h/.cpp` -- board model, 6-neighbour adjacency, union-find win
       detection over 121 cells + 4 virtual edge nodes. Freestanding, fixed arrays, no heap.
-- [ ] `src/apps_local/hex/HexBrain.h/.cpp` -- UCT/MCTS. `Level` selects both the playout policy
+- [x] `src/apps_local/hex/HexBrain.h/.cpp` -- UCT/MCTS. `Level` selects both the playout policy
       (plain / bridge-aware / bridge+AMAF) and the budget, per Design Notes. Root-level immediate
       win/block check, precomputed bridge table, caller-owned node pool, lent clock.
-- [ ] `src/apps_local/hex/HexFlow.h` -- `Screen`/`Tap`/`back()` enums, header-only constexpr.
-- [ ] `src/apps_local/hex/HexScreens.h/.cpp` -- `buildMenu`/`buildSettings`/`buildBoard`/`buildResult`,
+- [x] `src/apps_local/hex/HexFlow.h` -- `Screen`/`Tap`/`back()` enums, header-only constexpr.
+- [x] `src/apps_local/hex/HexScreens.h/.cpp` -- `buildMenu`/`buildSettings`/`buildBoard`/`buildResult`,
       plus `cellCentre()`/`cellAt()` as exact inverses, hexagons as triangle fans. Settings rows:
       OPPONENT (COMPUTER/HUMAN), LEVEL, PLAY AS.
-- [ ] `src/apps_local/hex/HexSave.h/.cpp` -- versioned pack/unpack of settings + position.
-- [ ] `src/apps_local/hex/HexActivity.h/.cpp` -- thin device layer: `LinkActivity` subclass, search task
+- [x] `src/apps_local/hex/HexSave.h/.cpp` -- versioned pack/unpack of settings + position.
+- [x] `src/apps_local/hex/HexActivity.h/.cpp` -- thin device layer: `LinkActivity` subclass, search task
       pinned to core 1, `onMatchEnded()` recording the result, `preventAutoSleep()` while thinking.
-- [ ] `src/apps_local/link/LinkPlay.h` -- add `Hex = 0x0B01` to `GameId` and `kAllGameIds`.
-- [ ] `src/apps_local/Shelf.cpp` -- alphabetical `#include` plus one `kGames` row.
-- [ ] `tools_local/toybox/icons.txt` -- add `hex = hexagon`; regenerate to scratch and splice, per the
+- [x] `src/apps_local/link/LinkPlay.h` -- add `Hex = 0x0B01` to `GameId` and `kAllGameIds`.
+- [x] `src/apps_local/Shelf.cpp` -- alphabetical `#include` plus one `kGames` row.
+- [x] `tools_local/toybox/icons.txt` -- add `hex = hexagon`; regenerate to scratch and splice, per the
       `icons.txt:1-6` warning that a full regen drops `icon_yahtzee_32` and `icon_connectfour_32`.
-- [ ] `README.md` -- 21 -> 22 games, a Games table row, and Hex in the PLAY NEARBY sentence (Ten -> Eleven).
-- [ ] `docs/buttons.md` -- bump the `Back` census 27 -> 28.
-- [ ] `docs/apps/hex.md` -- rules, modes, brain behaviour.
-- [ ] `host-tests/hex/run.sh` + `test_hex.cpp` -- rules, win detection, the full-board no-draw invariant,
+- [x] `README.md` -- 21 -> 22 games, a Games table row, and Hex in the PLAY NEARBY sentence (Ten -> Eleven).
+- [x] `docs/buttons.md` -- bump the `Back` census 27 -> 28.
+- [x] `docs/apps/hex.md` -- rules, modes, brain behaviour.
+- [x] `host-tests/hex/run.sh` + `test_hex.cpp` -- rules, win detection, the full-board no-draw invariant,
       save round-trip including a short line, brain determinism for a fixed seed.
-- [ ] `host-tests/ui/run.sh` + `test_ui.cpp` -- add `HexScreens.cpp`/`HexCore.cpp` to the compile list and
+- [x] `host-tests/ui/run.sh` + `test_ui.cpp` -- add `HexScreens.cpp`/`HexCore.cpp` to the compile list and
       a screens block, including the tap/draw geometry-inverse test over all 121 cells.
-- [ ] `host-tests/link/test_hexlink.cpp` + `run.sh` stanza -- wire round-trip.
+- [x] `host-tests/link/test_hexlink.cpp` + `run.sh` stanza -- wire round-trip.
 
 **Acceptance Criteria:**
 - Given a finished game, when the winning stone is placed, then the connected chain is shown and further taps do nothing.
@@ -124,7 +124,67 @@ multiplayer is an action, per `chess/ChessScreens.h:35-42`.
 
 ## Implementation Notes
 
+**Geometry, as built.** `a` (half a hexagon's flat top edge) and `h` (half the
+vertical pitch) are the two integers the layout is derived from, both taken from
+`DeviceContext`. On the X4 Pro they come out 12 and 21 -- s = 2a = 24, the
+board box 408 x 672, a 48px cell -- which is the spec's `s ~= 24` with the
+rounding done in integers so the tiling is exact. The four border strips are
+part of the fit on all four sides: measuring the box alone put the top strip one
+pixel inside the header's gutter, which `host-tests/ui`'s chrome probe caught.
+
+**`cellCentre()` / `cellAt()` take a `Layout`, not a `DeviceContext`.** The same
+drawing serves the playing board, the finished board and the front door's
+miniature at three scales, and a second copy of the arithmetic is how a
+miniature ends up disagreeing with the board it is a picture of.
+`boardLayout(device)` is the one place the panel is consulted.
+
+**The union-find lives inside `hex::Game`.** 125 bytes of forest beside the
+31-byte packed board puts the whole game at 162 of the link layer's 192, so the
+connectivity crosses the wire and lands in the save file with the position it
+describes rather than being rebuilt on arrival -- one implementation of one
+fact. `find()` is bounded rather than trusting a forest that arrived as bytes.
+
+**The brain's node pool is 2,048 nodes (49KB), allocated in `onEnter()`.** One
+node is created per simulation, so the tree deepens along the line the search
+keeps returning to and the remaining simulations sharpen what it has.
+`makeUniqueNoThrow` and null-checked: with no pool the app still plays, with a
+centre-weighted legal move and a line in the log.
+
+**UCT's logarithm is integer fixed-point, not `std::log`.** `std::sqrt` is
+correctly rounded by IEEE-754 and stays; `std::log` carries no such guarantee,
+and one bit of disagreement between two libms would make the same seed pick
+different moves on a laptop and on the chip.
+
+**Two defects a screenshot found and no assertion would have.** PLAY AGAIN was
+elided to "PLAY AG..." by a button the notch was too narrow for -- drawn,
+tappable, saying the wrong thing; the two doors are now stacked with each row
+taking the width its own height allows. And a fresh device's front door was a
+400px hole, so it now draws an empty board with the game's one-sentence rule
+under it.
+
+**Level budgets:** EASY 1,500 sims / 800ms plain; NORMAL 8,000 / 2,500ms
+bridge; HARD 30,000 / 4,500ms bridge + RAVE with exploration off. The host suite
+plays the three against each other at a fortieth of that -- 50 / 200 / 800 sims,
+same policies -- because the shipped counts are minutes of laptop time.
+
 ## Spec Change Log
+
+Nothing in the frozen block was renegotiated. Two additions outside it, both
+recorded above: the empty-board front door and the stacked result buttons.
+
+Three files the task list did not name were also touched, each because a gate
+demanded it:
+
+- `docs/apps/README.md`, which indexes that directory. `hex.md` was added to its
+  table (and `go.md`, which had been missing since Go shipped), and the "34
+  files" count corrected to the 38 that are actually there.
+- `site/index.html` and `site/assets/shots/hex.png`. `host-tests/site` reads the
+  shelf out of `Shelf.cpp` and fails until every game on it is named on the page
+  -- "a new app fails this until somebody writes it up" is that suite's own
+  description of itself -- so a card was added beside Go's, with a screenshot
+  taken through the simulator at 1x. `site/` is this fork's own and carries no
+  upstream-merge risk; it is outside the spec's path list all the same, which is
+  why it is written down here.
 
 ## Review Triage Log
 

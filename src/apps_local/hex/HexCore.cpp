@@ -50,7 +50,10 @@ int find(const Game& game, int node) {
   for (int steps = 0; steps < kNodes; ++steps) {
     const int up = game.parent[node];
     if (up == node) return node;
-    if (up < 0 || up >= kNodes) return node;
+    // A parent past the end is a forest this build did not write: stop where we
+    // are rather than indexing off the array. Only the upper bound is checked,
+    // because `parent` is unsigned and a negative one cannot be represented.
+    if (up >= kNodes) return node;
     node = up;
   }
   return node;
