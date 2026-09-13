@@ -72,7 +72,8 @@ multiplayer is an action, per `chess/ChessScreens.h:35-42`.
   (a `static_assert` catches collisions). `LinkActivity.h:70-104` -- the pure virtuals to implement;
   `:117-119` `enterLink`/`leaveLink`. Payload cap 192 bytes (`LinkProtocol.h:40`).
 - `src/apps_local/ui/ToyboxScreen.h:458-480` -- `disc`/`ring` composed from scanline `fill()`s, the
-  model for composing a hexagon. `ToyboxMetrics.h:14-47` -- `kChromeHeight` 83, `kMargin` 16.
+  model for composing a hexagon. Stones reuse Go's idiom verbatim (`GoScreens.cpp:53-54`): a black
+  `disc` at `r`, then a `disc` at `r-3` in the stone colour, so Hex stones match Go's on the shelf. `ToyboxMetrics.h:14-47` -- `kChromeHeight` 83, `kMargin` 16.
 - `freeink-sdk/.../FreeInkUICore.h:702-727` -- the complete `DrawTarget` set. `triangle(a,b,c,paint)`
   is the only arbitrary-shape fill screens may use. No circle, no n-gon.
 - `src/apps_local/Shelf.cpp:51` (`kGames`), `Shelf.h:54` (`Item{title, icon, create}`).
@@ -88,8 +89,9 @@ multiplayer is an action, per `chess/ChessScreens.h:35-42`.
 **Execution:**
 - [ ] `src/apps_local/hex/HexCore.h/.cpp` -- board model, 6-neighbour adjacency, union-find win
       detection over 121 cells + 4 virtual edge nodes. Freestanding, fixed arrays, no heap.
-- [ ] `src/apps_local/hex/HexBrain.h/.cpp` -- MCTS with fill-the-board playouts, UCT selection,
-      root-level immediate win/block check, `Level` budgets, caller-owned node pool, lent clock.
+- [ ] `src/apps_local/hex/HexBrain.h/.cpp` -- UCT/MCTS. `Level` selects both the playout policy
+      (plain / bridge-aware / bridge+AMAF) and the budget, per Design Notes. Root-level immediate
+      win/block check, precomputed bridge table, caller-owned node pool, lent clock.
 - [ ] `src/apps_local/hex/HexFlow.h` -- `Screen`/`Tap`/`back()` enums, header-only constexpr.
 - [ ] `src/apps_local/hex/HexScreens.h/.cpp` -- `buildMenu`/`buildSettings`/`buildBoard`/`buildResult`,
       plus `cellCentre()`/`cellAt()` as exact inverses, hexagons as triangle fans. Settings rows:
@@ -113,6 +115,7 @@ multiplayer is an action, per `chess/ChessScreens.h:35-42`.
 **Acceptance Criteria:**
 - Given a finished game, when the winning stone is placed, then the connected chain is shown and further taps do nothing.
 - Given opponent COMPUTER at any level, when the brain moves, then the UI stayed responsive and never tripped the watchdog.
+- Given Easy, Normal and Hard, when each plays the others over a fixed seeded series, then Hard beats Normal and Normal beats Easy.
 - Given the same position, level and seed, when the brain runs twice, then it returns the identical move.
 - Given opponent HUMAN on one device, when the turn passes, then the board is drawn in the same orientation for both players.
 - Given the board is drawn, then it runs corner to corner from top left to bottom right and all 121 cells sit clear of the chrome.
@@ -134,10 +137,26 @@ Win detection is union-find over 121 cells plus 4 virtual edge nodes: on placing
 same-colour neighbours and with the edge node when the cell sits on that player's border;
 `find(TOP) == find(BOTTOM)` wins. ~250 bytes, incremental, no per-move rescan.
 
-The brain exploits the Hex theorem: a full board has exactly one winner, so a playout is
-"shuffle the empty cells, deal alternately, run one union-find pass, read the winner" -- no
-legality checks, no mid-playout terminal test. Budget by level, mirroring `GoMichi.h:28-38`
-(`simulations` + `budgetMs`, clock lent so host tests stay deterministic).
+The brain is UCT/MCTS. It exploits the Hex theorem: a full board has exactly one winner, so a
+playout needs no legality checks and no mid-playout terminal test -- play out every empty cell,
+then read the winner off one union-find pass.
+
+Difficulty scales the *policy*, not just the budget. Cazenave and Saffidine measured the bridge
+pattern in the playout policy at +105 Elo over naive UCT, and AMAF/RAVE on top of it (with UCT
+exploration off) at a further +181 Elo -- together about what a 250-fold compute increase buys.
+That gain is affordable here and 250x compute is not, so:
+
+- Easy: plain UCT, no bridge, no AMAF, ~1-2k playouts. Playout is a single shuffle-and-fill pass.
+  Still takes an immediate win and blocks an immediate loss at the root, so it never looks broken.
+- Normal: bridge-aware playouts, ~8k.
+- Hard: bridge + AMAF/RAVE, exploration off, ~30k or time-budgeted.
+
+Consequence to plan for: bridge response is reactive, so from Normal up the playout cannot be one
+shuffle-and-fill pass. Walk the shuffled order instead, and when the opponent intrudes into a
+bridge play the saving cell rather than the next cell in the queue -- O(1) per move against a
+precomputed bridge table. Budget by level mirroring `GoMichi.h:28-38` (`simulations` + `budgetMs`,
+clock lent so host tests stay deterministic). Virtual connections / H-search are the next tier up
+(MoHex territory) and are deliberately out of scope.
 
 Geometry is **flat-top**, `cx = s*1.5*c`, `cy = s*sqrt(3)*(r + c/2)`, which runs the rhombus
 corner to corner from the panel's top left to its bottom right. The bounding box is `17s` by
