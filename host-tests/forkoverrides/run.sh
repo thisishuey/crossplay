@@ -29,6 +29,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 python3 - "$ROOT" <<'PY'
+import os
 import pathlib
 import re
 import subprocess
@@ -69,15 +70,58 @@ REGISTRY = [
 ]
 
 
+REF = "crosspoint/develop"
+
+
+# Whether the ref is here at all, asked once and kept apart from whether it
+# holds a given file. Conflating the two is what this suite used to do: a clone
+# with no crosspoint remote failed every cat-file below, and both entries were
+# then reported as "not upstream-owned, so this entry guards nothing" -- an
+# accusation that the registry had rotted, on a tree where nothing had. That is
+# every web session, on every commit. crossplay-ci.yml fetches the ref in a step
+# of its own and .claude/hooks/session-start.sh now does the same, but a clone
+# with neither must skip the ownership question rather than answer it wrongly.
+HAVE_REF = (
+    subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", REF],
+        cwd=root,
+        capture_output=True,
+    ).returncode
+    == 0
+)
+
+
 def upstream_has(path):
     return (
         subprocess.run(
-            ["git", "cat-file", "-e", f"crosspoint/develop:{path}"],
+            ["git", "cat-file", "-e", f"{REF}:{path}"],
             cwd=root,
             capture_output=True,
         ).returncode
         == 0
     )
+
+
+if not HAVE_REF:
+    # In CI this is a failure, not a skip, for the reason docsclaims gives at
+    # the same fork in the road: the workflow fetches the ref on purpose, and if
+    # that step is dropped the suite must say so rather than pass with half of
+    # itself switched off. Locally it is a loud skip -- the pattern checks need
+    # no upstream at all, and they are the half that catches a sync having eaten
+    # an override, which is what this suite is for.
+    if os.environ.get("CI"):
+        check(
+            False,
+            f"no {REF} ref in CI",
+            "the 'Fetch upstream's tip' step in crossplay-ci.yml is gone, so no\n"
+            "entry here can be checked for still pointing at a file upstream owns.",
+        )
+    else:
+        print(
+            f"  SKIP forkoverrides  no {REF} ref, so entries were NOT checked for "
+            f"still pointing at upstream-owned files (git fetch crosspoint "
+            f"develop). The patterns below still ran."
+        )
 
 
 registered = set()
@@ -89,7 +133,7 @@ for path, pattern, why in REGISTRY:
         continue
     # An entry on a file upstream does not own is pointing at nothing: the sync
     # hazard it guards cannot happen. Fail rather than carry a comforting entry.
-    if not upstream_has(path):
+    if HAVE_REF and not upstream_has(path):
         check(
             False,
             f"{path} is not upstream-owned, so this entry guards nothing",
@@ -108,35 +152,45 @@ for path, pattern, why in REGISTRY:
 # PUBLISH WHAT IS NOT GUARDED. A clean list hides absence: the registry covers
 # two files and the exposure is the whole modified set, so the size of the gap
 # is printed rather than left to be discovered by the next crash.
-try:
-    tracked = subprocess.run(
-        ["git", "ls-files", "src", "lib"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
-    modified = []
-    for path in tracked:
-        if not upstream_has(path):
-            continue
-        d = subprocess.run(
-            ["git", "diff", "--quiet", "crosspoint/develop", "--", path],
+if not HAVE_REF:
+    # Measured against nothing, the gap reads as zero: the old code printed
+    # "0 of 0 fork-modified upstream-owned files have NO entry here", which is
+    # the same sentence a fully guarded tree prints and the most reassuring
+    # possible way to say the measurement did not happen.
+    print(
+        f"  SKIP forkoverrides  no {REF} ref, so the exposure set could not be "
+        f"measured. Registered: {len(registered)}."
+    )
+else:
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "src", "lib"],
             cwd=root,
             capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        modified = []
+        for path in tracked:
+            if not upstream_has(path):
+                continue
+            d = subprocess.run(
+                ["git", "diff", "--quiet", REF, "--", path],
+                cwd=root,
+                capture_output=True,
+            )
+            if d.returncode == 1:
+                modified.append(path)
+        unguarded = [p for p in modified if p not in registered]
+        print(
+            f"  SKIP forkoverrides  {len(unguarded)} of {len(modified)} fork-modified "
+            f"upstream-owned files have NO entry here, so a sync can revert them "
+            f"silently and this suite will not notice. Registered: "
+            f"{len(registered)}."
         )
-        if d.returncode == 1:
-            modified.append(path)
-    unguarded = [p for p in modified if p not in registered]
-    print(
-        f"  SKIP forkoverrides  {len(unguarded)} of {len(modified)} fork-modified "
-        f"upstream-owned files have NO entry here, so a sync can revert them "
-        f"silently and this suite will not notice. Registered: "
-        f"{len(registered)}."
-    )
-except subprocess.CalledProcessError:
-    print("  SKIP forkoverrides  no crosspoint/develop remote, so the exposure "
-          "set could not be measured")
+    except subprocess.CalledProcessError:
+        print("  SKIP forkoverrides  git ls-files failed, so the exposure set "
+              "could not be measured")
 
 # The phrase check.sh counts sub-suites by (it greps "checks, 0 failed").
 # Printing anything else reports "ok (0 sub-suite(s))", which is exactly what

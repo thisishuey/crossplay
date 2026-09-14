@@ -43,6 +43,19 @@ step "submodules" git submodule update --init --recursive
 step "git hooks" git config core.hooksPath .githooks
 chmod +x .githooks/* 2>/dev/null || true
 
+# Four suites read upstream's tip to answer "did a sync quietly revert this?" --
+# forkoverrides, docsclaims, settingsorder and nodash. actions/checkout gives a
+# runner only `origin`, so crossplay-ci.yml fetches this ref in a step of its
+# own; nothing fetched it here, and every web session ran those suites blind.
+# forkoverrides did not even skip: it read the absent ref as "upstream does not
+# own this file" and failed both registry entries with "this entry guards
+# nothing" on a tree where nothing had rotted. Same URL and depth as the CI
+# step, deliberately -- the suites only read blobs at the tip. Keep the two in
+# step with each other.
+step "upstream ref" git fetch --no-tags --depth=1 \
+  https://github.com/crosspoint-reader/crosspoint-reader.git \
+  develop:refs/remotes/crosspoint/develop
+
 # The image ships stale package lists, and every apt install 404s without this.
 step "apt lists" bash -c "$SUDO apt-get update -qq"
 
