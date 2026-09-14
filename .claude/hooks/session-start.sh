@@ -52,9 +52,16 @@ chmod +x .githooks/* 2>/dev/null || true
 # nothing" on a tree where nothing had rotted. Same URL and depth as the CI
 # step, deliberately -- the suites only read blobs at the tip. Keep the two in
 # step with each other.
+# The leading + is load-bearing on a RESUMED session, where the ref already
+# exists from the first run. Upstream's develop moves, and --depth=1 means the
+# new tip is not a descendant of the one commit already here, so git calls it a
+# non-fast-forward and refuses -- which it did, in this file's own output, the
+# session after it was added. CI never sees it: actions/checkout starts clean
+# every time. A remote-tracking mirror of somebody else's branch is exactly
+# what + is for.
 step "upstream ref" git fetch --no-tags --depth=1 \
   https://github.com/crosspoint-reader/crosspoint-reader.git \
-  develop:refs/remotes/crosspoint/develop
+  +develop:refs/remotes/crosspoint/develop
 
 # The image ships stale package lists, and every apt install 404s without this.
 step "apt lists" bash -c "$SUDO apt-get update -qq"
