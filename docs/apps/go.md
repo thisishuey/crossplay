@@ -164,8 +164,10 @@ its side of that header is C and everything on this side is C++. Patching four
 thousand lines of somebody else's engine to satisfy a compiler it was never
 written for is a sync nobody wants to do twice.
 
-**Eight fork changes, all marked `FORK CHANGE:` in the source.** Three are
-ports and five are bugs that only a build like this one can reach:
+**Every fork change is marked `FORK CHANGE:` in the source**, which is the list
+a sync greps for rather than a count to keep in step. Some are ports to a
+machine michi was not written for; the rest are bugs only a build like this one
+reaches:
 
 - `N` is **13**, not 19. It is the compile-time MAXIMUM; the size actually
   played is `pos->size`, so one build serves both boards and a nine by nine game
@@ -192,6 +194,16 @@ ports and five are bugs that only a build like this one can reach:
   whatever it reads. Upstream never meets it because `genmove` passes out of a
   decided game before the board is down to two points; this fork deliberately
   does not, so it is the last two moves of nearly every game.
+- **`mcplayout()` draws its random start from the board, not from `1..N`.**
+  The playout picks a point and walks forward from it, so an off-board start
+  still finds a move -- but it funnels every start in the border into the same
+  few entry points. With N=13 playing nine by nine more than half of all starts
+  are in the border, and the playout's random move stops being uniform, which is
+  most of what a playout is. Upstream cannot meet this because it builds `N` to
+  the size it plays.
+- **`tree_search()` takes a deadline** and checks it once per simulation, so the
+  move can end on a wall clock without the count it reasons about changing. See
+  the budget section above for what the alternative cost.
 - **`line_height()` subtracts `N - size`.** `empty_position()` lays a board of
   `size` out at array rows `N-size+1..N`, not `1..size`, so on a build where N
   is the maximum rather than the board being played the arithmetic read every
@@ -255,25 +267,38 @@ hands back its best non-pass child instead, which is what michi's own
 `best_move(tree, except)` is for. Without that, a search at sixty simulations
 ended games this app was winning.
 
-**The search runs in chunks against a clock.** Upstream's `genmove` runs its
+**The clock is inside the search, not around it.** Upstream's `genmove` runs its
 whole simulation count in one call with no way in or out, which is fine for a
-program with a GTP time control and wrong for a panel somebody is holding.
-`tree_search` accumulates into the tree it is given -- michi itself calls it
-twice on one tree when it wants to think harder -- so the loop stops between
-chunks. The first chunk is eight simulations. Every chunk after it is sized by
-two caps: half the remaining budget, and a quarter second of predicted work.
-The second is what makes this a bound rather than an estimate -- without it one
-chunk can be the whole remaining budget, and the rate it is sized from was
-measured on the first eight simulations of an empty tree, which is exactly
-where that rate is wrong.
+program with a GTP time control and wrong for a panel somebody is holding. The
+fork gives `tree_search` a deadline it checks once per simulation
+(`michi_set_deadline` in `michi.c`), so the move ends on time with at most one
+simulation of overshoot and michi still reasons about the count it was asked
+for.
 
-The rate's numerator is `nplayouts_real`, what actually ran, not what was
-asked for. `tree_search` has its own early stops, and charging for simulations
-it skipped overstates the speed -- which oversizes the next chunk, which is the
-one direction the budget cannot afford to be wrong in. Chunking does make those
-early stops relative to the chunk rather than to the level's count, so a clearly
-decided position stops sooner than upstream would. It stops sooner, never
-wrong.
+It used to slice the search into a growing series of small `tree_search` calls
+and read the clock between them, and that was a real defect rather than a
+stylistic one. **Both** of `tree_search`'s early stops compare the simulations
+done against the count *that call* was handed: a slice of eight is "twenty
+percent read" after two simulations and stops itself there. The old code carried
+a comment saying the early stops became relative to the chunk and that this
+meant "it stops sooner, never wrong". Sooner was a fifth of the search.
+
+Measured by running the engine against a clock scaled to a part twenty-six times
+slower than the laptop, which is the only condition where the budget binds at
+all. Six seeds a row, 13x13 Hard:
+
+| | sliced | deadline |
+| --- | --- | --- |
+| playouts a move | 766-830 | 885-1,065 |
+| worst single move | 2.7s | 3.1s |
+
+The worst move goes UP, because the search now spends the budget it was given.
+It stays inside the 4.0s budget and well inside the five second ceiling.
+
+**Head to head under that clock the deadline build wins 75-45** over 120 games,
+with GNU Go counting and playing neither side. Against GNU Go on the laptop's
+own clock, where the budget never binds and only the first slice can hurt, it is
+36% against 29%.
 
 What is NOT safe is reimplementing `genmove`'s preamble. An earlier version did,
 missed part of it, and produced a tree in which PASS won every playout and every
@@ -292,9 +317,9 @@ vendor.
 
 |        | Simulations | Budget | What it is |
 | ------ | ----------- | ------ | ---------- |
-| Easy   | 60          | 1.2s   | a beginner who looks one fight ahead |
-| Medium | 500         | 2.5s   | michi-c2 at roughly GNU Go 3.8 `--level 10` |
-| Hard   | 1,500       | 4.0s   | as hard as five seconds a move allows |
+| Easy   | 60          | 1.2s   | loses to GNU Go 3.8 `--level 1` essentially always |
+| Medium | 500         | 2.5s   | 36% against it, level with michi-c2's own build |
+| Hard   | 1,500       | 4.0s   | 69% against it |
 
 One knob, because the other three -- handicap, komi and colour -- are the
 player's rows now. A level that silently spotted stones made EASY mean two
@@ -396,23 +421,49 @@ again and say yes again.
 
 ## How strong it actually is
 
-michi-c2's own published ladder, which is what the simulation counts are set
-from: **500 playouts is level with GNU Go 3.8 at `--level 10`**, and 1,500 is
-comfortably above it. That is two or three stones stronger than the engine this
-app shipped with first, which measured level with `--level 1` at 8,000 playouts
-of its own.
+Nine by nine, area scoring, komi 7.5, against GNU Go 3.8 at `--level 1`, 300
+games a level, both engines seeded per game:
 
-**Three traps in measuring this, all of which cost a wrong conclusion first:**
+|                                  | wins |
+| -------------------------------- | ---- |
+| Easy, 60 simulations             | 0.3% |
+| Medium, 500                      | 36%  |
+| Hard, 1,500                      | 69%  |
+| michi-c2's own build at N=9, 500 | 34%  |
 
+The last row is the control. This fork compiles michi for a 13x13 maximum and
+plays 9x9 inside it; the row says that costs nothing, which it did not always.
+
+**What is not known is how any of this maps to a person.** Nobody has played
+this build against a human of known rank. The rungs are ordered and well
+separated, and that is the whole of the claim. An earlier version of this file
+said Medium was level with GNU Go at `--level 10` and that 1,500 was "comfortably
+above it"; those came from michi-c2's own published ladder rather than from
+anything measured here, and the matches that appeared to confirm them could not
+have failed. They are gone.
+
+**Four traps in measuring this, each of which cost a wrong conclusion first:**
+
+- **Seed BOTH engines, per game, or the match size is a fiction.** michi sets
+  its generator to 1 in every process, so our engine replayed one game per
+  opening; GNU Go varies little at `--level 1`. A 300-game match was six to
+  twelve distinct games repeated, and two builds of *identical* code scored 42%
+  and 53% on it. Every strength number taken before that was found is worthless,
+  including several that were acted on. The harness sends
+  `param_general random_seed <n>` to our side and `--seed <n>` to GNU Go, and
+  prints how many distinct results a match produced; fewer than about thirty in
+  three hundred means the seeding is not working.
 - **A 24-game match cannot tell 37% from 56%.** Both of those are the same
   engine against the same opponent, measured twice. The interval on 24 games is
   about twenty points wide, which is wider than every change worth making. Do
   not quote a number from fewer than about sixty games, and do not act on one.
-- **GNU Go 3.8 is DETERMINISTIC.** Playing it against itself at two levels
-  produces the same game every time: a 48-game match between `--level 1` and
-  `--level 10` is two distinct games played twenty-four times each, and its
-  confidence interval is a fiction. It is a valid opponent for a randomised
-  engine and a useless one for itself.
+- **Both engines against a third is a blunt instrument for "is A better than
+  B".** It answers "is either better than GNU Go". Play A against B directly,
+  with a GNU Go that played neither side as the counter. The deadline change
+  read three ways: 7 points through GNU Go, 55% head to head on the laptop's own
+  clock, and 62% head to head under the device's. Only the last is the condition
+  the device is in, and it is the only one of the three that is clear of its own
+  error bar.
 - **Homebrew's `gnugo` crashes on `genmove` at every level on arm64.** It
   answers `boardsize` and `clear_board` happily and then dies silently, so a
   match reports every game as an error rather than as a crash. GNU Go assumes a

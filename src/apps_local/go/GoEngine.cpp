@@ -462,6 +462,14 @@ bool passingWins(const go::Game& game, const uint8_t colour) {
   return colour == go::kBlack ? score.blackHalves > score.whiteHalves : score.whiteHalves > score.blackHalves;
 }
 
+void opinionOnDead(const go::Game& game, uint8_t out[kMaskBytes]) {
+  // positionKey hashes the stones and the side to move and nothing else, so it
+  // does not move while the players are marking dead stones.
+  uint32_t seed = go::positionKey(game);
+  if (seed == 0) seed = 0x9E3779B9u;
+  estimateDead(game, seed, out);
+}
+
 void estimateDead(const go::Game& game, uint32_t& seed, uint8_t out[kMaskBytes]) {
   go::clearMask(out);
 

@@ -5815,6 +5815,15 @@ void testTheBoardSaysWhoseMoveAndWhatIsWrongWithTheMove() {
   buildGo<goui::BoardModel, goui::buildBoard>(atari, model);
   CHECK(atari.target.drew("THAT STONE WOULD BE IN ATARI"));
   CHECK(!atari.target.drew("THAT FILLS YOUR OWN EYE"));
+
+  // And the one message that explains a screen the player did not ask for. The
+  // machine refuses a count it disagrees with and the game resumes; a board
+  // that reappears saying nothing reads as a fault rather than as a rule.
+  model.caution = go::Caution::None;
+  model.disagreed = true;
+  Rendered back;
+  buildGo<goui::BoardModel, goui::buildBoard>(back, model);
+  CHECK(back.target.drew("IT DISAGREES. KEEP PLAYING."));
 }
 
 void testTheCountScreenOffersBothWaysOut() {

@@ -60,4 +60,14 @@ bool fastPlayForTest(go::Game& game, int point);
 // marking half a dragon dead draws one live stone beside one ghost.
 void estimateDead(const go::Game& game, uint32_t& seed, uint8_t out[go::kMaskBytes]);
 
+// The engine's OPINION about which stones are dead: estimateDead seeded from the
+// position itself, so the same board always gets the same answer.
+//
+// That reproducibility is the whole point. The counting screen offers this as a
+// starting position and, against the machine, only accepts a marking that still
+// matches it -- so an answer that drifted between two askings would refuse the
+// very count it had just offered, and bounce the player back to the board for
+// agreeing with it.
+void opinionOnDead(const go::Game& game, uint8_t out[go::kMaskBytes]);
+
 }  // namespace goengine

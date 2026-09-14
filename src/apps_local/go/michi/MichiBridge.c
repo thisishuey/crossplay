@@ -142,23 +142,10 @@ static void adopt(int size, const uint8_t *board, int toMove, int komiHalves, in
     gGame->komi = board_komi(gPos);
 }
 
-// The best move that is NOT a pass, read off the tree the search just built.
-//
-// Passing is the APP's decision, not the engine's (see the note in
-// GoMichi.cpp), so when the search likes a pass this asks it for its next
-// choice instead. michi's own best_move() takes a list of nodes to skip, which
-// is exactly this question; without it a search that liked a pass at sixty
-// simulations would end a game the app was still winning.
-static Point best_non_pass(void)
+void michi_bridge_seed(uint32_t seed)
 {
-    if (gTree == NULL || gTree->children == NULL) return PASS_MOVE;
-    TreeNode *except[2] = {NULL, NULL};
-    for (TreeNode **child = gTree->children ; *child != NULL ; child++) {
-        if ((*child)->move == PASS_MOVE) { except[0] = *child; break; }
-    }
-    TreeNode *best = best_move(gTree, except[0] != NULL ? except : NULL);
-    if (best == NULL) return PASS_MOVE;
-    return best->move;
+    michi_bridge_init();   // zobrist setup saves and restores idum, so seed after it
+    idum = (unsigned int)seed;
 }
 
 int michi_bridge_genmove(int size, const uint8_t *board, int toMove, int komiHalves, int ko, int lastMove,
@@ -170,27 +157,25 @@ int michi_bridge_genmove(int size, const uint8_t *board, int toMove, int komiHal
     michi_stack_alloc(128);
     adopt(size, board, toMove, komiHalves, ko, lastMove, moveNumber);
 
-    // The search in CHUNKS, against a wall clock.
+    // One search, bounded by a clock rather than sliced into chunks.
     //
-    // Upstream's genmove() runs the whole simulation count in one call and
-    // there is no way in or out of it. That is fine for a program with a GTP
-    // time control and wrong for a panel somebody is holding: the count that
-    // costs two seconds on nine by nine costs five on thirteen, and "under five
-    // seconds" is the requirement the levels are built to.
-    //
-    // tree_search() accumulates into the tree it is given -- michi itself calls
-    // it twice on one tree when it wants to think harder -- so the search can be
-    // stopped between chunks without being restarted. What is NOT safe is
-    // reimplementing genmove's preamble: an earlier version of this function
-    // did, missed part of it, and produced a tree in which PASS won every
-    // playout and every real move lost every one. So the preamble below is
-    // genmove's, line for line, and only the loop is ours.
+    // tree_search() decides for itself when a position is clear enough to stop
+    // reading, and BOTH of its tests compare the simulations done against the
+    // count it was handed. An earlier version of this function ran the budget
+    // as a growing series of small tree_search() calls so the clock could be
+    // read between them; each of those calls stopped itself almost at once,
+    // because a chunk of eight is "twenty percent read" after two simulations.
+    // The search asked for five hundred played about a hundred, and the engine
+    // lost twenty-one points of win rate against GNU Go 3.8 for it. The clock
+    // now lives inside the loop (see michi_set_deadline in michi.c), so the
+    // count michi reasons about is the whole budget and the move still ends on
+    // time. Overshoot is one simulation.
     //
     // is_better_to_pass() is deliberately not called. It runs
     // compute_all_status(), which segmentation faults on a nearly full board,
     // and it can only answer yes when the opponent has just passed -- which the
     // position handed to us never records, because the stones are PLACED rather
-    // than played. Passing is the app's decision and it is taken in GoEngine.
+    // than played. Passing is the app's decision and it is taken in GoMichi.
     N_SIMS = simulations;
     gGame->time_init = 0;
 
@@ -201,54 +186,13 @@ int michi_bridge_genmove(int size, const uint8_t *board, int toMove, int komiHal
     nplayouts_real = 0;
 
     uint32_t began = nowMs != NULL ? nowMs() : 0;
-    Point pt = PASS_MOVE;
-    // What was ASKED for bounds the loop; what actually RAN sizes the next
-    // chunk. They differ because tree_search has its own early stops, and using
-    // the asked-for count as the rate's numerator overstates the speed -- which
-    // oversizes the next chunk, which is the one thing the budget cannot
-    // afford to get wrong in that direction.
-    int asked = 0;
-    // The first chunk is small because nothing is known yet about how long a
-    // simulation costs on this chip at this board size. Every chunk after it is
-    // sized from the rate actually measured, which is why the budget holds
-    // across both boards without a constant per board.
-    int chunk = 8;
-    while (asked < simulations) {
-        int want = simulations - asked;
-        if (want > chunk) want = chunk;
-        pt = tree_search(gPos, gTree, want, gOwnerMap, gScoreCount, 0);
-        asked += want;
-        if (nowMs == NULL) { chunk = 256; continue; }
-        int done = nplayouts_real > 0 ? nplayouts_real : 1;
-
-        uint32_t spent = nowMs() - began;
-        if (spent >= budgetMs) break;
-        if (spent == 0) spent = 1;
-        // Two caps, and the second is the one that makes this a BOUND rather
-        // than an estimate. Half of what is left, so a chunk that runs slower
-        // than the measured rate still lands inside the budget; and never more
-        // than a quarter second of predicted work, so the clock is consulted
-        // often enough that even a badly wrong rate cannot overshoot by more
-        // than that quarter second times how wrong it was.
-        //
-        // Without the second cap one chunk can be the whole remaining budget,
-        // and a rate measured on the first eight simulations -- an empty tree,
-        // the longest playouts of the move -- is exactly where it would be
-        // wrong. Four seconds plus a whole budget's overshoot is not under
-        // five; four seconds plus a quarter of a second, doubled, is.
-        double perMs = (double)done / (double)spent;
-        double half = perMs * (double)(budgetMs - spent) * 0.5;
-        double slice = perMs * 250.0;
-        double afford = half < slice ? half : slice;
-        if (afford < 1.0) break;
-        chunk = (int)afford;
-        if (chunk > 512) chunk = 512;
-    }
+    michi_set_deadline(nowMs, began, budgetMs);
+    Point pt = tree_search(gPos, gTree, simulations, gOwnerMap, gScoreCount, 0);
+    michi_set_deadline(NULL, 0, 0);
 
     gLastMs = nowMs != NULL ? nowMs() - began : 0;
     gLastSimulations = nplayouts_real;
 
-    if (pt == PASS_MOVE || pt == RESIGN_MOVE) pt = best_non_pass();
     if (pt == PASS_MOVE || pt == RESIGN_MOVE) return -1;
     int row, col;
     if (!our_point(pt, size, &row, &col)) return -1;

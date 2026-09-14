@@ -301,6 +301,13 @@ inline void mark(uint8_t mask[kMaskBytes], const int point) { mask[point / 8] |=
 inline void unmark(uint8_t mask[kMaskBytes], const int point) {
   mask[point / 8] &= static_cast<uint8_t>(~(1u << (point % 8)));
 }
+// Whether two masks mark exactly the same points.
+inline bool sameMask(const uint8_t a[kMaskBytes], const uint8_t b[kMaskBytes]) {
+  for (int i = 0; i < kMaskBytes; ++i) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
 inline void clearMask(uint8_t mask[kMaskBytes]) {
   for (int i = 0; i < kMaskBytes; ++i) mask[i] = 0;
 }

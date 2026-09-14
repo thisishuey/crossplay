@@ -123,6 +123,12 @@ void   make_pat3set(void);
 // static -- 500 of them is 2.8MB of .bss, which does not fit this chip's DRAM
 // segment at all. See michi.c.
 void   michi_stack_alloc(int depth);
+// FORK CHANGE: the search's wall clock. See michi.c; `now` NULL disables it.
+// uint32_t rather than unsigned int: the caller's clock is uint32_t, and on
+// Xtensa that is `long unsigned int`, so `unsigned int` here is a different
+// function pointer type and the device build refuses it.
+#include <stdint.h>
+void   michi_set_deadline(uint32_t (*now)(void), uint32_t began, uint32_t budget);
 Position* michi_expand_scratch(void);
 void   michi_stack_free(void);
 char*  make_list_pat3_matching(Position *pos, Point pt);

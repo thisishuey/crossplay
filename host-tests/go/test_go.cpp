@@ -905,13 +905,105 @@ uint32_t gFakeReadings = 0;
 uint32_t gFakeStep = 400;
 uint32_t fakeClock() {
   // The step is set to just over half the level's budget, so the budget
-  // genuinely runs out on the second chunk. A one millisecond step does not:
+  // genuinely runs out early in the search. A one millisecond step does not:
   // the search finishes its whole simulation count in three or four readings
   // and the branch this test exists to exercise is never taken -- the test
-  // then passes with the budget check deleted.
+  // then passes with the budget check deleted. A step of zero freezes the
+  // clock, which is the case the test below this one needs.
   ++gFakeReadings;
   gFakeMs += gFakeStep;
   return gFakeMs;
+}
+
+// A clock that never runs out must change NOTHING about the search.
+//
+// It did. The budget used to be applied by slicing the search into a series of
+// small tree_search() calls and reading the clock between them, and the size of
+// those slices was computed from the clock -- so lending a clock changed the
+// work done even when the budget was never reached. It was worse than that:
+// BOTH of tree_search's early stops compare the simulations done against the
+// count IT was handed, so a slice of eight is "twenty percent read" after two
+// simulations and stops itself there. The search asked for five hundred played
+// about a hundred.
+//
+// The clock is inside the search's own loop now, so a clock that never fires is
+// a clock that does nothing, and that is exactly what this asserts. It fails on
+// the sliced version, whose answer depends on whether a clock was lent at all.
+// Two boots, two different games -- and the same seed replays exactly.
+//
+// michi's generator is a global that starts at 1, and nothing in the engine set
+// it. `GoActivity::onEnter` gathered entropy from `millis()` into a seed and
+// passed it to `chooseMove`, which discarded it: `(void)seed`. So the answer to
+// a given position was fixed for the life of the build, and the first game after
+// every power-on was the same first game. The comment in onEnter said the seed
+// "has to differ between boots or the computer plays the same game every time",
+// which was true and was not happening.
+//
+// Both halves matter. Different is what a player notices; identical-from-the-
+// same-seed is what makes every other test in this file mean anything.
+void testADifferentSeedPlaysADifferentGameAndTheSameSeedReplays() {
+  const int kOpening = 6;
+
+  auto openingFrom = [&](uint32_t start, int* out) {
+    Game game;
+    reset(game, kSize, 0, komiForHandicap(0));
+    uint32_t seed = start;
+    for (int m = 0; m < kOpening; ++m) {
+      out[m] = gomichi::chooseMove(game, go::Level::Medium, seed);
+      CHECK(out[m] == kPass || legal(game, out[m], game.toMove));
+      CHECK(play(game, out[m]));
+    }
+  };
+
+  int a[kOpening], b[kOpening], again[kOpening];
+  openingFrom(0x9E3779B9u, a);
+  openingFrom(0x9E3779B9u ^ (1234u * 2654435761u), b);
+  openingFrom(0x9E3779B9u, again);
+
+  // Replay: every move, in order.
+  for (int m = 0; m < kOpening; ++m) CHECK(a[m] == again[m]);
+
+  // Divergence: somewhere in six moves. Not move by move -- two openings may
+  // legitimately share a first move -- but they must not be the same opening.
+  bool differs = false;
+  for (int m = 0; m < kOpening; ++m) {
+    if (a[m] != b[m]) differs = true;
+  }
+  CHECK(differs);
+}
+
+void testAClockThatNeverRunsOutChangesNothing() {
+  Game game;
+  reset(game);
+  CHECK(play(game, pointAt(4, 4)));
+  CHECK(play(game, pointAt(2, 6)));
+
+  for (int i = 0; i < 3; ++i) {
+    const go::Level level = static_cast<go::Level>(i);
+    const uint32_t start = 31337u + static_cast<uint32_t>(i);
+
+    // The SAME starting seed both times. chooseMove advances it once a move, so
+    // reusing the variable would compare two different draws and this test would
+    // be asserting that two unrelated searches agree.
+    uint32_t seed = start;
+    gFakeMs = 0;
+    gFakeReadings = 0;
+    const int withoutClock = gomichi::chooseMove(game, level, seed);
+    const int simsWithout = gomichi::lastSimulations();
+    CHECK(gFakeReadings == 0);
+
+    // Frozen: every reading is the same millisecond, so the budget can never be
+    // reached however many simulations run.
+    seed = start;
+    gFakeMs = 0;
+    gFakeReadings = 0;
+    gFakeStep = 0;
+    const int withClock = gomichi::chooseMove(game, level, seed, fakeClock);
+    CHECK(gFakeReadings > 0);
+    CHECK(withClock == withoutClock);
+    CHECK(gomichi::lastSimulations() == simsWithout);
+  }
+  gFakeStep = 400;
 }
 
 void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
@@ -920,8 +1012,8 @@ void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
   // property of the machine. Mario played the first build on hardware and said
   // every level was too slow.
   //
-  // So the search runs in chunks against a clock the caller lends, and this
-  // proves the clock is actually consulted: with a clock that advances a
+  // So the search reads a clock the caller lends, and this proves the clock is
+  // actually consulted: with a clock that advances a
   // millisecond per reading, the budget runs out within a few readings and the
   // search must come back having run FAR fewer simulations than its count
   // allows -- and still come back with a legal move.
@@ -942,11 +1034,15 @@ void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
     // this clock. The comparison is what makes the assertion able to fail --
     // "fewer than the count" is also true of a search michi stopped early by
     // itself, and that is what the first version of this test was measuring.
-    uint32_t seed = 9090u + static_cast<uint32_t>(i);
+    const uint32_t start = 9090u + static_cast<uint32_t>(i);
+    uint32_t seed = start;
     const int unhurried = gomichi::chooseMove(game, level, seed);
     const int unhurriedSims = gomichi::lastSimulations();
     CHECK(unhurried == kPass || legal(game, unhurried, game.toMove));
 
+    // Same starting seed, so the only difference between the two searches is
+    // the clock.
+    seed = start;
     gFakeMs = 0;
     gFakeReadings = 0;
     gFakeStep = settings.budgetMs / 2 + 1;
@@ -1048,7 +1144,132 @@ void testAHandicapIsStonesOnTheBoardAndWhiteToPlay() {
   CHECK(withStones.blackHalves - withStones.whiteHalves > without.blackHalves - without.whiteHalves);
 }
 
-void testItNeverPassesAWonGameAway() {
+// The number on the board is the number the engine passes on.
+//
+// Mario, on hardware, after v1.13.1: "I still see the opponent never passes."
+// Measured, he was right about what he saw and the machine was right to do it:
+// when a player passes with points still belonging to nobody, the machine takes
+// them, one a turn, and 86% of those moves are worth a point each. Agreeing
+// instead was tried and costs it the game -- 40 wins in 40 became 16 in 40.
+//
+// So the machine keeps playing and the BOARD explains why. That explanation is
+// only worth anything if its number is the engine's number, which is why there
+// is one freePoints() and both read it. A screen saying two points are left
+// beside an opponent that plays nine more is worse than no screen at all.
+// The explanation speaks only when nothing more urgent needs the row.
+//
+// The board has ONE line to speak on. The line that says a pass was played
+// through has to yield to the three that answer a more pressing question, and
+// the `thinking` case is the one that actually bites: the flag is still set from
+// the previous pass while the next search runs, so without that term the
+// explanation replaces THINKING from the second pass onward and the machine
+// looks frozen.
+void testTheExplanationYieldsToAnythingMoreUrgent() {
+  const go::Caution none = go::Caution::None;
+  // The case it exists for: your pass was answered with a stone, points remain.
+  CHECK(go::explainsPlayedOn(true, 43, false, false, none));
+
+  // Silent when there was no pass to explain, or nothing left to take. A "0
+  // FREE POINTS" line would be worse than saying nothing.
+  CHECK(!go::explainsPlayedOn(false, 43, false, false, none));
+  CHECK(!go::explainsPlayedOn(true, 0, false, false, none));
+
+  // Yields to all three, each on its own so a missing term cannot hide behind
+  // another.
+  CHECK(!go::explainsPlayedOn(true, 43, true, false, none));
+  CHECK(!go::explainsPlayedOn(true, 43, false, true, none));
+  CHECK(!go::explainsPlayedOn(true, 43, false, false, go::Caution::FillsOwnEye));
+  CHECK(!go::explainsPlayedOn(true, 43, false, false, go::Caution::SelfAtari));
+}
+
+void testTheBoardsFreePointCountIsTheOneTheEngineDecidesOn() {
+  // A board with a wall down the middle: four points down the third column
+  // reach both colours, so they belong to nobody and are worth taking.
+  Game game;
+  const char* rows[kSize] = {
+      "XX.OOOOOO",  //
+      "XX.OOOOOO",  //
+      "XX.OOOOOO",  //
+      "XX.OOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+  };
+  setUp(game, rows, kBlack);
+  const int free = go::freePoints(game, kBlack);
+  CHECK(free == 4);
+  CHECK(go::freePoints(game, kWhite) == 4);
+
+  // Every one of them is empty, playable, and owned by nobody: the three
+  // conditions the count is made of, checked separately so a count that is
+  // right by accident cannot pass.
+  uint8_t owner[go::kMaxPoints];
+  go::territory(game, owner);
+  int checked = 0;
+  for (int point = 0; point < game.points(); ++point) {
+    if (game.at(point) != kEmpty || owner[point] != kEmpty) continue;
+    CHECK(legal(game, point, kBlack));
+    ++checked;
+  }
+  CHECK(checked == free);
+
+  // Filling one leaves one fewer, which is what makes the number on the board
+  // count down as the machine takes them.
+  CHECK(play(game, pointAt(0, 2)));
+  CHECK(go::freePoints(game, kWhite) == 3);
+
+  // A point inside somebody's territory is NOT free: taking it gains nothing
+  // under area scoring, and counting it would have the board promising points
+  // that are not there.
+  Game closed;
+  const char* walled[kSize] = {
+      "XXXXXXXXX",  //
+      "X.......X",  //
+      "XXXXXXXXX",  //
+      "OOOOOOOOO",  //
+      "O.......O",  //
+      "OOOOOOOOO",  //
+      "XXXXXXXXX",  //
+      "OOOOOOOOO",  //
+      "OOOOOOOOO",  //
+  };
+  setUp(closed, walled, kBlack);
+  CHECK(go::freePoints(closed, kBlack) == 0);
+
+  // And a point nobody owns that one colour may NOT play. Without this case the
+  // legality test in freePoints() is not exercised at all: on every board above,
+  // every unowned point is playable by both, so deleting that line leaves all
+  // the counts right and the suite green.
+  //
+  // A ko point does not do it -- the capture leaves it ringed by one colour, so
+  // it belongs to that colour and is not free. This one is a corner point
+  // wedged between the two: Black there is suicide, because the black stone it
+  // would join has no other liberty and nothing is captured; White there is a
+  // capture, so it is legal.
+  Game wedge;
+  const char* wedged[kSize] = {
+      ".XO......",  //
+      "OO.......",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+  };
+  setUp(wedge, wedged, kBlack);
+  uint8_t wedgeOwner[go::kMaxPoints];
+  go::territory(wedge, wedgeOwner);
+  CHECK(wedgeOwner[pointAt(0, 0)] == kEmpty);   // nobody's: it touches both
+  CHECK(!legal(wedge, pointAt(0, 0), kBlack));  // suicide
+  CHECK(legal(wedge, pointAt(0, 0), kWhite));   // captures, so legal
+  CHECK(go::freePoints(wedge, kBlack) == go::freePoints(wedge, kWhite) - 1);
+}
+
+void testItStopsWhenTheResultIsSettledAndNotBefore() {
   // The Leela Zero rule, and the loudest way a Go program can look broken.
   //
   // A board where Black plainly leads: passing wins for Black and loses for
@@ -1075,13 +1296,47 @@ void testItNeverPassesAWonGameAway() {
   uint32_t seed = 6060u;
   CHECK(gomichi::chooseMove(game, go::Level::Easy, seed) == kPass);
 
-  // White, after Black passed: passing ends it and White LOSES, so it plays on
-  // however hopeless the position is.
+  // White, after Black passed: it passes too, because the result is settled and
+  // playing on decides nothing.
+  //
+  // This assertion used to be the opposite, and the opposite is what made the
+  // game feel endless to a beginner: the machine played forty more moves of a
+  // game it had already lost. GNU Go 3.8 was measured on this board and passes
+  // in EVERY game, while losing in three of eight, once at move 34 with 47 of
+  // 81 points still empty. Stopping when the result is settled is what a Go
+  // program does, whichever side of it you are on.
   game.toMove = kWhite;
   game.passes = 1;
   for (int trial = 0; trial < 3; ++trial) {
     const int move = gomichi::chooseMove(game, go::Level::Hard, seed);
-    CHECK(move != kPass);
+    CHECK(move == kPass);
+  }
+
+  // But NOT when the points still on the table could change who wins. This is
+  // the half that keeps "stop when it is settled" from becoming "give up": the
+  // margin has to exceed what is left, and here it does not.
+  //
+  // Black leads by 2 points on the board before komi, and there are four points
+  // belonging to nobody down the middle -- more than enough to swing it -- so
+  // neither colour may stop.
+  {
+    Game close;
+    const char* tight[kSize] = {
+        "XXXX.OOOO",  //
+        "XXXX.OOOO",  //
+        "XXXX.OOOO",  //
+        "XXXX.OOOO",  //
+        "XXXXXOOOO",  //
+        "XXXX.OOOO",  //
+        "XXXX.OOOO",  //
+        "XXXX.OOOO",  //
+        "XXXX.OOOO",  //
+    };
+    setUp(close, tight, kBlack);
+    close.passes = 1;
+    CHECK(gomichi::chooseMove(close, go::Level::Medium, seed) != kPass);
+    close.toMove = kWhite;
+    CHECK(gomichi::chooseMove(close, go::Level::Medium, seed) != kPass);
   }
 
   // And nobody passes while the game is still being played, whatever the count
@@ -1162,11 +1417,21 @@ void testEasyIsWeakWithoutLookingBroken() {
       const uint8_t mover = game.toMove;
       const int move = gomichi::chooseMove(game, go::Level::Easy, seed);
       if (move == kPass) {
-        // Passing is allowed when the opponent passed and it wins, and when
-        // there is nothing left to play. Those are the only two, and the search
-        // does not get a vote: michi liking a pass at sixty simulations would
-        // otherwise end a game this level was winning.
-        CHECK((game.passes >= 1 && goengine::passingWins(game, mover)) || !go::hasUsefulMove(game, mover));
+        // The search does not get a vote on passing: michi liking a pass at
+        // sixty simulations would otherwise end a game this level was winning.
+        // So either the opponent has already passed, or there is nothing left
+        // to play -- and a pass with neither true is the fault this is looking
+        // for.
+        //
+        // This assertion used to name `goengine::passingWins`, the Leela Zero
+        // rule, which the app stopped using when it started stopping at a
+        // settled result instead. It kept passing only because these three
+        // seeded games never reached the branch; changing the seed made it fail
+        // at once. Whether a settled position is settled ENOUGH is
+        // testItStopsWhenTheResultIsSettledAndNotBefore's job, on positions
+        // built for it, and repeating that arithmetic here would only assert
+        // that the rule equals itself.
+        CHECK(game.passes >= 1 || !go::hasUsefulMove(game, mover));
       } else {
         CHECK(legal(game, move, mover));
       }
@@ -1537,6 +1802,75 @@ void testTheDeadStoneGuessFindsAWholeGroup() {
   }
 }
 
+void testYouCannotSetYourOwnScoreAgainstTheMachine() {
+  // The complaint this exists for, in Mario's words: "I felt I could change the
+  // score there to whatever I wanted. Make me win or lose."
+  //
+  // He could. One tap recorded agreement for BOTH colours, so whatever the
+  // player marked became the result and the machine had no say in its own game.
+  CHECK(!go::acceptEndsTheGame(go::Opponent::Computer, false));
+  CHECK(go::acceptEndsTheGame(go::Opponent::Computer, true));
+  // Two people sharing one device settle it between themselves. They are
+  // looking at the same screen, so neither can cheat the other.
+  CHECK(go::acceptEndsTheGame(go::Opponent::Human, false));
+  CHECK(go::acceptEndsTheGame(go::Opponent::Human, true));
+}
+
+void testTheMachinesOpinionIsTheSameEveryTimeItIsAsked() {
+  // Seeded from the POSITION, not from a running seed. Without that, the count
+  // you were OFFERED before putting the device down can be REFUSED when you
+  // pick it up, and the game bounces you back to the board for agreeing with it.
+  //
+  // The fixture is NOT a settled board, deliberately. On a settled one the
+  // guess converges to the same answer whatever seed it is given, so the test
+  // passes even when the seed drifts -- which is exactly what the first version
+  // of this test did. This position was found by searching random mid-game
+  // boards for one where two seeds genuinely disagree; about one in ten does.
+  const char* rows[kSize] = {
+      "O.X.XXXX.",  //
+      "XXOO.O.X.",  //
+      ".XXO.X.OX",  //
+      "X.XO.OOXO",  //
+      "XXXXXOO.O",  //
+      ".OO.OXOXO",  //
+      "O.XXOX..O",  //
+      "XX.OXOOOX",  //
+      ".X....XX.",  //
+  };
+  Game game;
+  setUp(game, rows, kBlack);
+  game.stage = static_cast<uint8_t>(Stage::Scoring);
+
+  // The fixture earns its keep: two seeds really do disagree here. If this ever
+  // stops being true the test below is measuring nothing and says so.
+  {
+    uint8_t a[go::kMaskBytes];
+    uint8_t b[go::kMaskBytes];
+    uint32_t s1 = 1u;
+    uint32_t s2 = 987654321u;
+    goengine::estimateDead(game, s1, a);
+    goengine::estimateDead(game, s2, b);
+    CHECK(!go::sameMask(a, b));
+  }
+
+  // And the opinion is the same answer every time it is asked.
+  uint8_t first[go::kMaskBytes];
+  uint8_t again[go::kMaskBytes];
+  goengine::opinionOnDead(game, first);
+  for (int trial = 0; trial < 4; ++trial) {
+    goengine::opinionOnDead(game, again);
+    CHECK(go::sameMask(first, again));
+  }
+
+  // Marking anything else is a disagreement, and a disagreement does not end
+  // the game.
+  uint8_t mine[go::kMaskBytes];
+  for (int i = 0; i < go::kMaskBytes; ++i) mine[i] = first[i];
+  go::mark(mine, pointAt(0, 1));
+  CHECK(!go::sameMask(first, mine));
+  CHECK(!go::acceptEndsTheGame(go::Opponent::Computer, go::sameMask(first, mine)));
+}
+
 void testACountEndsOnlyWhenBOTHSeatsAgree() {
   // The one thing a match's endgame must not do: end because one seat pressed
   // ACCEPT. The first version did exactly that, while the button it pressed
@@ -1625,6 +1959,8 @@ int main() {
   testASaveWithNoGameInItStillCarriesTheSettings();
   testAHalfWrittenSaveCostsNothingButTheGame();
   testTheDeadStoneGuessFindsAWholeGroup();
+  testYouCannotSetYourOwnScoreAgainstTheMachine();
+  testTheMachinesOpinionIsTheSameEveryTimeItIsAsked();
   testACountEndsOnlyWhenBOTHSeatsAgree();
   testACountIsAnAgreementNotAComputation();
   testTheFastBoardIsTheSameGame();
@@ -1632,13 +1968,21 @@ int main() {
   testTheClockStopsTheSearchWhateverTheSimulationCountSays();
   testEveryLevelIsADifferentPlayer();
   testAHandicapIsStonesOnTheBoardAndWhiteToPlay();
-  testItNeverPassesAWonGameAway();
+  testItStopsWhenTheResultIsSettledAndNotBefore();
+  testTheBoardsFreePointCountIsTheOneTheEngineDecidesOn();
+  testTheExplanationYieldsToAnythingMoreUrgent();
   testTheEngineIsToldAboutTheKo();
   testEasyIsWeakWithoutLookingBroken();
   testTheLargeBoardIsTheSameGameOnMorePoints();
   testResetClearsTheTailOfTheLargerBoard();
   testTheOpponentBeatsARandomMoverAtEveryLevel();
 
+  // Last, deliberately: it seeds michi's generator, and every test after it
+  // would draw from a different stream than the one it was written against.
+  testADifferentSeedPlaysADifferentGameAndTheSameSeedReplays();
+  testAClockThatNeverRunsOutChangesNothing();
+
   std::printf("%d checks, %d failed\n", checks, failures);
+
   return failures == 0 ? 0 : 1;
 }

@@ -12,18 +12,20 @@ files carry no header, so the grant above is the grant, and the attribution in
 
 ## Why this and not the engine we had
 
-Measured, not asserted, over about 1,200 9x9 games:
+Measured on 300 seeded 9x9 games a row, against GNU Go 3.8 at `--level 1`.
+Seeded matters: an unseeded match of the same size is a handful of games
+replayed, and the first version of this table was one. See
+`docs/apps/go.md`.
 
-| | vs GNU Go 3.8 level 10 |
+| | wins |
 | --- | --- |
-| michi-c2 at 500 simulations | level |
-| michi-c2 at 1,500 | 60% |
-| the engine this replaced, at 8,000 playouts | 8% |
+| michi-c2 at 500 simulations | 36% |
+| michi-c2 at 1,500 | 69% |
 
-**michi-c2 at 500 simulations beats the old engine at 8,000.** Both run at about
-the same raw playout rate; the difference is entirely what each playout knows.
-That is two or three stones, and it is the reason this is a port rather than
-another round of tuning.
+The engine this replaced is not in the table because it is deleted and its own
+numbers came from the unseeded harness. What decided it was not a number: Mario
+played it on hardware for one game and said it was weak, and the research had
+recommended porting michi-c2 in the first place.
 
 ## What was taken, and what was not
 
@@ -38,12 +40,13 @@ must not be reached for. They are megabytes, they derive from a commercial game
 database, their download URL is dead and the Wayback Machine never archived one
 of them. The numbers above are all without them.
 
-## The fork's changes, which are eight
+## The fork's changes
 
-Every one is marked `FORK CHANGE` in the source so a future sync can find them.
-Three are ports. **Five are bugs**, and each is one only a build like this one
-reaches: a maximum N larger than the board being played, a device with no
-`stderr` and no x86, and an app that plays on where upstream would have passed.
+Every one is marked `FORK CHANGE` in the source, which is the list to grep at a
+sync rather than a count to keep in step with. Some are ports. The rest are
+bugs, and each is one only a build like this one reaches: a maximum N larger
+than the board being played, a device with no `stderr` and no x86, a wall clock
+on the move, and an app that plays on where upstream would have passed.
 
 **The three ports:**
 
@@ -67,6 +70,16 @@ reaches: a maximum N larger than the board being played, a device with no
   `genmove()` passes out of a decided game before the board is down to two
   points; this fork decides passing itself and plays on, so it is the last two
   moves of nearly every game.
+- **`michi.c`: `mcplayout()` draws its random start from the board.** Upstream
+  draws from `1..N` on an `N`-strided array; with N=13 and a 9x9 game more than
+  half of those points are off-board border, and `choose_random_move()` walks
+  forward from there, funnelling them into a few entry points. The playout's
+  random move stops being uniform.
+- **`michi.c`: `tree_search()` takes a deadline**, checked once per simulation.
+  The move has a wall clock on this device. Reading that clock between a series
+  of small `tree_search()` calls instead is what the fork did first, and it cost
+  a third of the search: both of `tree_search`'s early stops are relative to the
+  count that call was handed.
 - **`board.c`: `line_height()` subtracts `N - size`.** `empty_position()` lays
   a board of `size` out at array rows `N-size+1..N`, not `1..size`. With N
   equal to the board being played the two agree, which is why upstream never

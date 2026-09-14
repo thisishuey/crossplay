@@ -51,6 +51,14 @@ int michi_bridge_ranked(int size, int *out, int max);
 // the ko not transferred at all.
 void michi_bridge_context(int size, int *ko, int *lastMove, int *moveNumber);
 
+// Sets michi's random generator.
+//
+// It is a global initialised to 1, and nothing in michi's own GTP loop sets it
+// unless a `param_general random_seed` command arrives. So without this call
+// every fresh boot replays one game: the engine's answer to a given position is
+// fixed, and the first game after a power-on is the same first game every time.
+void michi_bridge_seed(uint32_t seed);
+
 // Frees the search tree. The engine stays initialised; the next genmove builds
 // a new one. Called when the app closes, so a few hundred kilobytes of PSRAM do
 // not sit there for the rest of the boot.

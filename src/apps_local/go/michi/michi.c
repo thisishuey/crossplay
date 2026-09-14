@@ -104,6 +104,36 @@ Point *michi_cfg_fringe(void)
 // How deep the ladder reader is; see MICHI_LADDER_MAX below.
 static int ladder_depth;
 
+// FORK CHANGE: a deadline the search stops at, checked once per simulation.
+//
+// The move budget is a wall clock here -- somebody is holding the panel -- and
+// upstream's tree_search() runs its whole count in one call with no way out of
+// it. Slicing the call into small ones is NOT an alternative: both of the
+// early stops inside tree_search compare `i` against the `n` IT was given, so a
+// chunk of eight stops itself after two simulations, and the search that was
+// asked for five hundred plays a handful. Measured, that cost twenty-one points
+// of win rate against GNU Go 3.8. So `n` stays the whole budget and the clock
+// ends the loop instead.
+//
+// michi_now_ms is NULL off the device and in the host suite, where there is no
+// clock and the count is the bound.
+static uint32_t (*michi_now_ms)(void);
+static uint32_t michi_began_ms, michi_budget_ms;
+
+void michi_set_deadline(uint32_t (*now)(void), uint32_t began, uint32_t budget)
+{
+    michi_now_ms = now;
+    michi_began_ms = began;
+    michi_budget_ms = budget;
+}
+
+// Unsigned subtraction, so a millisecond counter that wraps is still ordered.
+static int michi_out_of_time(void)
+{
+    if (michi_now_ms == NULL) return 0;
+    return (uint32_t)(michi_now_ms() - michi_began_ms) >= michi_budget_ms;
+}
+
 // expand()'s scratch position. Allocated once, beside the ladder stack and for
 // the same reason: 5.7KB in a frame on the deepest path this engine takes.
 static Position *expand_scratch;
@@ -657,7 +687,19 @@ double mcplayout(Position *pos, int amaf_map[], int owner_map[],
             mark_release(already_suggested);
         }
             
-        int x0 = random_int(N) + 1, y0 = random_int(N) + 1;
+        // FORK CHANGE: draw the start from the BOARD, not from 1..N.
+        //
+        // choose_random_move() walks forward from here and wraps, so an
+        // off-board start still finds a move -- but it funnels every start in
+        // the border into the same few entry points, and with N=13 playing 9x9
+        // more than half of all starts are in the border. The playout's random
+        // move stops being uniform, which is most of what a playout is.
+        //
+        // Upstream cannot meet this because it builds N to the size it plays,
+        // where 1..N IS the board. A board of `size` sits at array rows
+        // N-size+1..N, columns 1..size.
+        int rsize = board_size(pos);
+        int x0 = random_int(rsize) + 1, y0 = random_int(rsize) + 1 + (N - rsize);
         move = choose_random_move(pos, y0*(N+1) + x0 , disp);
 found:
         if (move == PASS_MOVE) {      // No valid move : pass
@@ -1054,7 +1096,7 @@ Point tree_search(Position *pos, TreeNode *tree, int n, int owner_map[],
 
     int live_gfx = strcmp(Live_gfx,"None") != 0;
 
-    for (i=0 ; i<n/2 ; i++) {
+    for (i=0 ; i<n/2 && !michi_out_of_time() ; i++) {
         if (live_gfx && (i % Live_gfx_interval) == Live_gfx_interval-1)
             display_live_gfx(pos, tree, owner_map);
 
@@ -1079,7 +1121,7 @@ Point tree_search(Position *pos, TreeNode *tree, int n, int owner_map[],
         }
     } 
 
-    for ( ; i<n ; i++) {
+    for ( ; i<n && !michi_out_of_time() ; i++) {
         if (live_gfx && (i % Live_gfx_interval) == Live_gfx_interval-1)
             display_live_gfx(pos, tree, owner_map);
         *workpos = *pos;
