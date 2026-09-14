@@ -2338,4 +2338,20 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BrokenPipeError:
+        # The reader stopped first -- `board tick | head`, `| grep -q`, or a
+        # `| less` quit early. That is the reader's choice, not this program's
+        # error, but Python raises inside the print that fills the dead pipe and
+        # then raises AGAIN flushing stdout at shutdown, printing an "Exception
+        # ignored" block no one can act on and exiting non-zero. A caller with
+        # `set -o pipefail` takes that non-zero as the whole pipeline's status,
+        # so `board tick | grep -q "0 new card"` read as a board failure even
+        # though grep had already found its line and left -- and only for a
+        # match early in the output, because a match near the end arrives after
+        # the last write. That is host-tests/bugflow/run.sh:273, which passed on
+        # the very next line for no better reason than where its pattern sits.
+        # Point stdout at the void so the shutdown flush lands somewhere, and go.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)
