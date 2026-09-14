@@ -21,6 +21,13 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
+### 1.14.0-fork1789350277
+
+- Go's opponent gets about a third more thinking done in the same time, so it plays better at every level.
+- Go stops when the game is decided, instead of playing on until the board is full.
+- Go's opponent now has to agree with the final count, so the result is the game's rather than yours.
+- Go says why your pass did not end the game, and how many points are still open.
+
 ### 1.14.0-fork1789340977
 
 - Hex. Eleven by eleven, against the device, someone next to you, or someone nearby.

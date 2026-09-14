@@ -69,7 +69,9 @@ import re
 import subprocess
 import sys
 
-TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+# v1.2.3, and v1.2.3-fork<stamp> for this fork's own release lane
+# (platformio.ini:9-16). The lane group is what tells the two apart below.
+TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-fork(\d+))?$")
 NEW_LINE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\*\*)?what is new(?:\*\*)?\s*[:\-]\s*(.+)$", re.I
 )
@@ -116,6 +118,11 @@ def run(cmd, cwd):
     return r.stdout
 
 
+def tag_key(tag):
+    a, b, c, lane = TAG.match(tag).groups()
+    return (int(a), int(b), int(c), int(lane or 0))
+
+
 def last_tag(repo, override=None):
     if override:
         return override
@@ -124,7 +131,18 @@ def last_tag(repo, override=None):
     ]
     if not tags:
         raise SystemExit("release_notes: no v* tag to count from")
-    return max(tags, key=lambda t: tuple(int(x) for x in TAG.match(t).groups()))
+    # THE FORK'S OWN LANE WINS OUTRIGHT once it has published anything. An
+    # upstream tag is not a release of this fork, and a sync drags upstream's
+    # tags into the clone -- so with the lane filtered out of this list, which
+    # is what `^v\d+\.\d+\.\d+$` did, the count started from whichever plain
+    # tag happened to be lying around, and that differs by checkout. In the
+    # clone that ran the 1.13.2 sync it answered v1.13.2, one of upstream's; on
+    # a CI runner, which only ever holds origin's tags, the same commit
+    # answered v1.13.0. Neither is this fork's newest release, and the notes
+    # for a release are the merges since the last one -- so both would have
+    # re-listed landings that shipped in v1.14.0-fork1789340977 already.
+    lane = [t for t in tags if TAG.match(t).group(4)]
+    return max(lane or tags, key=tag_key)
 
 
 def merges_since(repo, tag):
@@ -338,9 +356,41 @@ def humanize(subject):
     return (s[:1].upper() + s[1:]) if s else subject
 
 
-def bump(version, minor):
-    a, b, c = (int(x) for x in version.split("."))
-    return f"{a}.{b + 1}.0" if minor else f"{a}.{b}.{c + 1}"
+def lane_stamp(repo):
+    """The stamp a lane version carries: the tip's commit time, not the clock.
+
+    It has to differ between releases and NOT between two runs of the same one.
+    A clock reading gives only the first. `--write`, a push that fails, and a
+    re-run by hand would then produce a second version, a second history block
+    beside the first, and a body rewritten for a release nobody ever tagged --
+    the exact stacking the suite below already forbids on the plain lane.
+    """
+    return run(["git", "log", "-1", "--format=%ct", "HEAD"], repo).strip()
+
+
+def bump(version, minor, stamp=None):
+    """One patch up, or one minor, keeping whichever lane the version is in.
+
+    This fork publishes as 1.14.0-fork1789340977 (platformio.ini:9-16): the
+    suffix keeps its tags clear of upstream's, and it is invisible to a device.
+    OtaUpdater.cpp:131-153 reads a version with sscanf("%d.%d.%d") and compares
+    those three integers and nothing else, so the NUMBERS are what has to rise
+    for an update to be offered and the suffix is re-stamped rather than
+    carried forward. Before this, bump() split on "." and handed
+    "0-fork1789340977" to int(): the first release cut from the lane died with
+    a ValueError, in the step whose failure `| tee` already hides from `set -e`.
+    """
+    m = TAG.match("v" + version)
+    if not m:
+        raise SystemExit(f"release_notes: cannot read a version out of {version!r}")
+    a, b, c, lane = m.groups()
+    a, b, c = int(a), int(b), int(c)
+    nxt = f"{a}.{b + 1}.0" if minor else f"{a}.{b}.{c + 1}"
+    if not lane:
+        return nxt
+    if not stamp:
+        raise SystemExit("release_notes: a -fork lane version needs a stamp")
+    return f"{nxt}-fork{stamp}"
 
 
 def current_version(ini_text):
@@ -512,7 +562,7 @@ def main():
         dropped, unsaid = [], []
 
     cur = current_version(ini.read_text())
-    nxt = bump(cur, minor)
+    nxt = bump(cur, minor, lane_stamp(repo))
     print(f"last tag {tag}, {len(merges)} merge(s), {cur} -> {nxt}")
     for b in bullets:
         print(f"  - {b}")

@@ -180,6 +180,68 @@ q git checkout -q v1.12.9 2>/dev/null; q git checkout -q -b quiet
 python3 "$TOOL" --repo-dir "$R" --pr-json "$WORK/prs.json" --dry-run 2>&1 | grep -q "NEXT_VERSION=$" && ok "nothing since the tag means no version" || bad "released with nothing merged"
 
 echo
+echo "the fork's own version lane"
+# platformio.ini:9-16 publishes this fork as 1.14.0-fork<stamp>, and nothing
+# here had ever seen that shape. Two things broke on the first release cut from
+# it, both silently enough to reach a person: bump() split on "." and handed
+# "0-fork1789340977" to int(), and the lane's own tags did not match TAG at all,
+# so the merge count started from whichever PLAIN tag the checkout happened to
+# hold -- a different one in a synced clone (v1.13.2, upstream's) than on a CI
+# runner (v1.13.0), and neither of them this fork's newest release.
+RL="$WORK/lane"; mkdir -p "$RL/docs"; cd "$RL" || exit 1
+q git init -q -b xteink
+q git config user.email t@t; q git config user.name t
+printf '[crossplay]\nversion = 1.14.0-fork1789340977\n' > platformio.ini
+lay_out_docs "$RL" 1.14.0-fork1789340977 "Hex, eleven by eleven"
+q git add -A; q git commit -qm base
+q git tag v1.14.0-fork1789340977
+# Upstream's tags ride in on every sync, and this one is NUMERICALLY HIGHER
+# than the fork's own release. Counting from it would re-list the landings that
+# already shipped in the lane's last tag.
+q git tag v1.20.0
+echo '[]' > "$WORK/none.json"
+q git checkout -qb app/go; echo go > src.txt; q git add -A; q git commit -qm "fix(go): say why a pass did not end the game"
+q git checkout -q xteink
+# The merge times are PINNED, and the assertions below name them. Left to the
+# clock, two merges made by a test land in the same second and a stamp taken
+# from the clock would pass the restamp check by accident -- which is the one
+# thing it exists to catch.
+GIT_AUTHOR_DATE="@1789000000 +0000" GIT_COMMITTER_DATE="@1789000000 +0000" \
+  q git merge -q --no-ff app/go -m "Merge branch 'app/go' into xteink"
+
+out="$(python3 "$TOOL" --repo-dir "$RL" --pr-json "$WORK/none.json" --dry-run 2>&1)"
+echo "$out" | grep -qE 'NEXT_VERSION=1\.14\.1-fork[0-9]+' && ok "a lane version bumps the patch and stays in the lane" || bad "lane bump: $out"
+echo "$out" | grep -q "last tag v1.14.0-fork1789340977," && ok "the lane's own tag is what it counts from" || bad "counted from the wrong tag: $out"
+echo "$out" | grep -qE 'NEXT_VERSION=1\.20\.|NEXT_VERSION=1\.21\.' && bad "a higher upstream tag became the starting point" || ok "a higher upstream tag is not this fork's last release"
+
+# THE STAMP IS THE TIP'S COMMIT TIME, not the clock. A clock reading differs
+# between two runs of the SAME release, so `--write`, a failed push and a re-run
+# by hand would write a second version and stack a second history block beside
+# the first -- which the plain lane is already guarded against above.
+A="$(echo "$out" | sed -n 's/^NEXT_VERSION=//p')"
+[ "$A" = "1.14.1-fork1789000000" ] \
+  && ok "the stamp is the tip's commit time, so a re-run repeats the version" \
+  || bad "the stamp is not the tip's commit time: $A"
+
+# ...and it moves when the tip does, so two releases never collide.
+q git checkout -qb app/hex; echo hex >> src.txt; q git add -A; q git commit -qm "fix(hex): the board redraws after a swap"
+q git checkout -q xteink
+GIT_AUTHOR_DATE="@1789000500 +0000" GIT_COMMITTER_DATE="@1789000500 +0000" \
+  q git merge -q --no-ff app/hex -m "Merge branch 'app/hex' into xteink"
+B="$(python3 "$TOOL" --repo-dir "$RL" --pr-json "$WORK/none.json" --dry-run 2>&1 | sed -n 's/^NEXT_VERSION=//p')"
+[ "$B" = "1.14.1-fork1789000500" ] && ok "a new tip restamps the lane" || bad "the lane did not restamp for a new tip: $A then $B"
+
+# release:minor carries the lane too.
+printf '[{"number": 9, "title": "feat: something bigger", "labels": [{"name": "release:minor"}], "mergeCommit": {"oid": "%s"}}]\n' \
+  "$(git -C "$RL" rev-parse HEAD)" > "$WORK/lane-minor.json"
+python3 "$TOOL" --repo-dir "$RL" --pr-json "$WORK/lane-minor.json" --dry-run 2>&1 \
+  | grep -qE 'NEXT_VERSION=1\.15\.0-fork[0-9]+' && ok "release:minor keeps the lane" || bad "minor bump lost the lane"
+
+q python3 "$TOOL" --repo-dir "$RL" --pr-json "$WORK/none.json" --write
+grep -qE '^version = 1\.14\.1-fork[0-9]+$' "$RL/platformio.ini" && ok "the lane version is what platformio.ini gets" || bad "platformio.ini: $(grep '^version' "$RL/platformio.ini")"
+grep -qE '^### 1\.14\.1-fork[0-9]+$' "$RL/docs/release-notes.md" && ok "the history heading carries the lane" || bad "the history heading lost the lane"
+
+echo
 echo "v1.12.17: only what a person can receive becomes a note"
 # The seven landings of v1.12.16..v1.12.17, with their real path sets. The
 # table that classifies them is scripts_local/device-build-needed.sh, asked by

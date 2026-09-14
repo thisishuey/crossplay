@@ -54,6 +54,13 @@ This fork exists to add games and small tools under `src/apps_local/`, to be sen
 - Build `-e x4pro` before believing an app is done. `Arduino.h` defines `word()` and
   `bit()` as macros, so a method with either name compiles everywhere and fails only at
   device link.
+- A web session cannot build for a device at all, so check.sh cannot reach `green` there.
+  PlatformIO's downloader lands on certifi, which does not carry the agent proxy's CA, so
+  fetching the ESP32 core fails TLS and `gh_release_x4pro+gh_release_sticky` dies in
+  seconds having compiled nothing. Read the host suites as the local signal and let
+  `crossplay-ci.yml` do the device build on push to `xteink`. Never weaken TLS to get past
+  it -- adding the CA to a trust store is a permission question for the user, not a fix to
+  apply quietly.
 - One suite: `bash host-tests/<name>/run.sh`. check.sh discovers them, and fails a suite
   whose directory holds a `test_*` file its `run.sh` never invokes.
 - Run `pio check --fail-on-defect high` before a PR -- CI runs cppcheck, check.sh does not.
@@ -64,6 +71,38 @@ This fork exists to add games and small tools under `src/apps_local/`, to be sen
   prints what it could not do. Outside a web session, run at least
   `git submodule update --init --recursive` and `git config core.hooksPath .githooks`
   yourself; builds fail on missing `freeink-sdk/` headers and commits fail the format gate.
+
+## Syncing upstream, and releasing
+
+- No remote for `ma-r-s/crossplay` survives a session; add it to sync. `crosspoint/develop`
+  is fetched by `.claude/hooks/session-start.sh`, because four suites read it.
+- Sync by MERGING `upstream/xteink`, never with GitHub's "Sync fork" button: it is
+  fast-forward only, so with commits on both sides it offers nothing but "Discard N
+  commits", which hard-resets the fork.
+- Conflicts land in the version lane only -- `platformio.ini`, `docs/release-body.md`,
+  `docs/release-notes.md`. Keep the fork's version and body; keep both sets of notes,
+  newest first.
+- check.sh reads a sync as a stale tree, because upstream's own commits net-delete. Use
+  `CHECK_ALLOW_UNDO=1` once `git diff HEAD upstream/xteink` is empty on the paths upstream
+  changed.
+- `.githooks/pre-push` refuses a branch carrying upstream's version bumps without their
+  tags. Push with `CROSSPLAY_ALLOW_UNTAGGED_BUMP=1` and NEVER push upstream's `v*` tags:
+  `crossplay-release.yml` fires on any `v*` and would publish upstream's versions as this
+  fork's, into the lane that exists to keep them apart.
+- Releases here are MANUAL. `crossplay-autorelease.yml` and `crossplay-emulator.yml` are
+  switched off in the Actions tab; `crossplay-ci.yml` and `crossplay-release.yml` are on.
+- Cut one with `scripts_local/release_notes.py --write` (version, body and history, all
+  three or none), then a pull request into `xteink`, then Releases -> Draft a new release
+  with the tag. `crossplay-release.yml:88` refuses unless the tag is `v` + the
+  `[crossplay]` version, and it replaces anything typed in the UI with
+  `docs/release-body.md`.
+- A sync merged without a pull request yields ONE note line, because release_notes.py
+  reads upstream's subjects out of a PR body. Hand-write the notes after `--write`.
+- The lane is `1.14.0-fork<stamp>`, the stamp being the tip's commit time. Devices are
+  re-flashed whole rather than updated over the air, so the numeric core need not rise
+  between releases -- the stamp is what keeps each tag unique. Every release in the lane
+  lands as a GitHub pre-release, because `-fork<stamp>` is a semver prerelease identifier
+  and `softprops/action-gh-release` infers it. That is wanted; do not "fix" it.
 
 ## Conventions that differ from defaults
 
