@@ -156,6 +156,24 @@ constexpr fui::Rect inkCentred(const fui::Rect& box, const CutMetrics& cut) {
                    cut.lineHeight};
 }
 
+// The cut a line height belongs to, or nullptr for one this fork does not ship.
+//
+// Matched on lineHeight because that is the one metric a DrawTarget will
+// answer for a bound font -- the same handle fittedTitle uses to order its
+// rungs. Needed wherever ink has to be placed rather than merely drawn: the
+// component centres a LINE BOX, and a line box carries `ascender - inkHeight`
+// of air above the capitals, so anything centring by eye needs the real
+// numbers.
+constexpr const CutMetrics* cutForLineHeight(const int16_t lineHeight) {
+  const CutMetrics* all[] = {&kTileCut,    &kButtonCut,           &kUiCut,         &kDisplayCut,    &kLargeCut,
+                             &kHugeCut,    &kSerifSmallCut,       &kSerifTileCut,  &kSerifTitleCut, &kReadingSmallCut,
+                             &kReadingCut, &kReadingBoldSmallCut, &kReadingBoldCut};
+  for (const CutMetrics* cut : all) {
+    if (cut->lineHeight == lineHeight) return cut;
+  }
+  return nullptr;
+}
+
 // Font slots by name. Screens should not spell the slot numbers.
 constexpr fui::FontId kSmallFont = fui::FONT_SLOT_SMALL;
 constexpr fui::FontId kUiFont = fui::FONT_SLOT_BODY;
@@ -252,6 +270,17 @@ inline const fui::ThemeTokens& themeTokens() {
     tokens.minTouchSize = 44;
 
     tokens.listRowGap = 4;
+    // Lists stopped reading rowHeight. Screen::resolveListProps() sizes a row
+    // from its label font, its padding and the device touch minimum, and then
+    // clamps up to listMinRowHeight -- rowHeight above is not consulted at all.
+    // Toybox's rows are deliberately 62 and its gap deliberately 4, so both
+    // have to be stated in the tokens that function DOES read. Left unsaid, a
+    // touch device resolves 56 and 6 instead, and every fork helper that
+    // positions something on a row from theme().rowHeight (toybox::listRowRect,
+    // and so every icon drawn by iconAtRowRight) lands it 4px per row out of
+    // place, the last one outside the band entirely.
+    tokens.listMinRowHeight = kRowHeight;
+    tokens.listTouchRowGap = tokens.listRowGap;
     tokens.listSidePadding = kGutter;
     // Zero, not kMargin: the screen's content rect already carries the page
     // margin, and listInset is applied on top of it. Setting both indents the

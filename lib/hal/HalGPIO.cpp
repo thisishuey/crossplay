@@ -229,6 +229,8 @@ bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
 
 bool HalGPIO::hasHomeKey() const { return BoardConfig::hasHomeKey(); }
 
+bool HalGPIO::wasHomeKeyPressed() const { return inputMgr.wasHomeKeyPressed(); }
+
 bool HalGPIO::wasHomeKeyTapped() const { return inputMgr.wasHomeKeyTapped(); }
 
 bool HalGPIO::wasHomeKeyLongPressed() const { return inputMgr.wasHomeKeyLongPressed(); }
@@ -370,6 +372,11 @@ HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
   if (resetReason == ESP_RST_DEEPSLEEP &&
       (wakeupCause == ESP_SLEEP_WAKEUP_GPIO || wakeupCause == ESP_SLEEP_WAKEUP_EXT1)) {
     return WakeupReason::PowerButton;
+  }
+  // A timer wake is a deep-sleep wake like any other; without this it falls
+  // through to Other and takes the full boot, splash and panel clear.
+  if (resetReason == ESP_RST_DEEPSLEEP && wakeupCause == ESP_SLEEP_WAKEUP_TIMER) {
+    return WakeupReason::Timer;
   }
   if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && !usbConnected &&
       coldBootImpliesPowerButton()) {
