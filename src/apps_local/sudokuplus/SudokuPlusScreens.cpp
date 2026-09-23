@@ -441,7 +441,7 @@ struct Lesson {
 };
 
 // Face characters:
-//   '.' empty            's' empty and selected     'd' empty and shaded
+//   '.' empty            's' empty and selected     '-' empty and shaded
 //   'p' pencilled        'A'-'I' a clue, 1-9         'a'-'i' a focused clue
 //   '1'-'9' your digit   '!' your `digit`, clashing  '?' the clue `digit`, clashing
 // The clues are 1, 3 and 9 in the corners so no face puts two of a digit in
@@ -453,7 +453,7 @@ const Lesson kLessons[] = {
     {"NOTES", "TURN NOTES ON, THEN TAP DIGITS TO PENCIL.", "MENU CAN PENCIL EVERY CELL AT ONCE.", "A.C.s...I",
      "A.C.p...I", 0},
     {"READING", "TAP A DIGIT TO LIGHT EVERY COPY OF IT.", "SHADED CELLS ARE OUT; KEYS COUNT HOW MANY LEFT.",
-     "A.C.....I", "adCdddddI", 0},
+     "A.C.....I", "a-C-----I", 0},
     {"MISTAKES", "A DIGIT THAT CLASHES IS STRUCK THROUGH.", "HINT AND CHECK ARE IN THE MENU.", "A.C.s...I", "A.?.!...I",
      3},
 };
@@ -482,7 +482,7 @@ void drawFace(toybox::Screen& screen, const fui::Rect& box, const char* face, co
       screen.target().fill(at, fui::Paint::solid(fui::Color::Black));
     } else if (clue) {
       screen.target().fill(at, fui::Paint::dither(fui::Color::DarkGray));
-    } else if (mark == 'd') {
+    } else if (mark == '-') {
       screen.target().fill(at, fui::Paint::dither(fui::Color::LightGray));
     }
     frame(screen, at, toybox::kHairline);
