@@ -37,7 +37,10 @@ echo "crossplay session setup"
 
 # freeink-sdk is the platform layer every build compiles against, and it tracks
 # a branch rather than a default, so take the commit the superproject records.
-step "submodules" git submodule update --init --recursive
+# Sync first: `update --init` copies the URL into .git/config once and reads it
+# from there ever after, so a clone that tried the old ma-r-s address keeps
+# failing on it after .gitmodules moves to Free-Ink, until something syncs.
+step "submodules" bash -c 'git submodule sync --recursive && git submodule update --init --recursive'
 
 # pre-commit formats, pre-push guards the release train. Never set by default.
 step "git hooks" git config core.hooksPath .githooks
