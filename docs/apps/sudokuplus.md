@@ -103,10 +103,10 @@ nobody ever saw.
 - Everything else -- empty cells and your own digits -- is plain paper with a
   black numeral. No underline, no mark: your digits are simply the ones not on
   grey.
-- The selection is one style on every ground: a 2px black frame with a 3px
-  white frame just inside it. The black half carries it on paper and LightGray,
-  the white half on DarkGray and on the focus, so it never branches on what is
-  underneath.
+- The selection is a black frame and a white frame, inverted by the ground. On
+  paper and LightGray it is 3px white outside a 2px black line, so it never
+  merges with the board frame at the grid's edge; on a clue's DarkGray and on
+  the focus it is 2px black outside a 3px white band.
 - A clash is a 3px diagonal slash through the cell, white on a dark ground and
   black on a light one. It is not a frame because the selection is one, and not
   a black ground because black belongs to the focus.

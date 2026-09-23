@@ -9129,9 +9129,10 @@ void testTheSudokuPlusGroundsReadInOrder() {
   CHECK(clues > 0);
 }
 
-// One selection style on every ground: 2px black outside, 3px white inside.
-// Asserted on a paper cell and on a dark clue, the two ends of the range.
-void testTheSudokuPlusSelectionIsOneStyleEverywhere() {
+// The selection is two frames on every ground, inverted by the ground: on a
+// dark clue 2px black outside 3px white, on a light cell 3px white outside 2px
+// black, so the white half never meets the board frame on the grid's edge.
+void testTheSudokuPlusSelectionInvertsOnLightGrounds() {
   const fui::DeviceContext ctx = device();
   sudokuplusui::BoardModel base;
   base.game = aSudokuPlusGame(sudoku::Level::Easy);
@@ -9139,29 +9140,34 @@ void testTheSudokuPlusSelectionIsOneStyleEverywhere() {
   while (!sudokuplus::isGiven(base.game, clue)) ++clue;
   int empty = 0;
   while (sudokuplus::valueAt(base.game, empty) != 0) ++empty;
-  const int cells[] = {clue, empty};
-  for (const int cell : cells) {
-    sudokuplusui::BoardModel model = base;
-    model.game.selected = static_cast<uint8_t>(cell);
-    Rendered out;
-    buildSudokuPlusBoard(out, model);
-    const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
-    bool outer = false;
-    bool inner = false;
+  auto band = [](const Rendered& out, const fui::Rect& box, const fui::Color color, const int16_t at,
+                 const int16_t weight) {
     for (size_t i = 0; i < out.target.fills.size(); ++i) {
       const fui::Rect& r = out.target.fills[i];
       const fui::Paint& paint = out.target.fillPaints[i];
-      if (paint.kind != fui::PaintKind::Solid) continue;
-      if (paint.color == fui::Color::Black && r.x == box.x && r.y == box.y && r.width == box.width && r.height == 2) {
-        outer = true;
-      }
-      if (paint.color == fui::Color::White && r.x == box.x + 2 && r.y == box.y + 2 && r.width == box.width - 4 &&
-          r.height == 3) {
-        inner = true;
-      }
+      if (paint.kind != fui::PaintKind::Solid || paint.color != color) continue;
+      if (r.x == box.x + at && r.y == box.y + at && r.width == box.width - 2 * at && r.height == weight) return true;
     }
-    CHECK(outer);
-    CHECK(inner);
+    return false;
+  };
+  const bool shades[] = {true, false};
+  for (const bool shade : shades) {
+    sudokuplusui::BoardModel model = base;
+    model.game.shadePeers = shade ? 1 : 0;
+    model.game.selected = static_cast<uint8_t>(clue);
+    Rendered dark;
+    buildSudokuPlusBoard(dark, model);
+    const fui::Rect clueBox = sudokuplusui::cellRect(ctx, clue);
+    CHECK(band(dark, clueBox, fui::Color::Black, 0, 2));
+    CHECK(band(dark, clueBox, fui::Color::White, 2, 3));
+
+    model.game.selected = static_cast<uint8_t>(empty);
+    Rendered light;
+    buildSudokuPlusBoard(light, model);
+    const fui::Rect emptyBox = sudokuplusui::cellRect(ctx, empty);
+    CHECK(band(light, emptyBox, fui::Color::White, 0, 3));
+    CHECK(band(light, emptyBox, fui::Color::Black, 3, 2));
+    CHECK(!band(light, emptyBox, fui::Color::Black, 0, 2));
   }
 }
 
@@ -14363,7 +14369,7 @@ int main() {
   testTheSudokuPlusSolvedSlotIsTheDoor();
   testTheSudokuPlusHeaderCarriesTheClockOrTheAnswer();
   testTheSudokuPlusGroundsReadInOrder();
-  testTheSudokuPlusSelectionIsOneStyleEverywhere();
+  testTheSudokuPlusSelectionInvertsOnLightGrounds();
   testTheSudokuPlusClashIsASlash();
   testTheSudokuPlusHeaderClockCrossesTheHour();
   testTheSudokuPlusPadSaysFocusAndRemaining();

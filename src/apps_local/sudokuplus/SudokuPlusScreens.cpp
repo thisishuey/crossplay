@@ -94,16 +94,21 @@ void cornerMarks(toybox::Screen& screen, const fui::Rect& box, const int16_t arm
   screen.target().fill(fui::makeRect(rightEdge, bottomArm, weight, arm), paint);
 }
 
-// The selection: a 2px black outer frame with a 3px white frame just inside
-// it. One style on every ground -- paper, LightGray, the givens' DarkGray and
-// the focus's solid black -- because the black half carries it on the light
-// grounds and the white half on the dark ones, so nothing has to branch on
-// what is underneath.
-constexpr int16_t kSelectOuter = 2;
-constexpr int16_t kSelectInner = 3;
-void selectionFrame(toybox::Screen& screen, const fui::Rect& box) {
-  frame(screen, box, kSelectOuter, false);
-  frame(screen, inset(box, kSelectOuter), kSelectInner, true);
+// The selection: two frames, one black and one white, so it reads on every
+// ground. On a dark ground (a clue's DarkGray, the focus's black) it is 2px
+// black outside a 3px white band, the white half carrying it. On a light one
+// (paper, or LightGray) it is inverted: 3px white outside a 2px black line, so
+// it never merges with the board frame or a box rule at the edge of the grid.
+constexpr int16_t kSelectBlack = 2;
+constexpr int16_t kSelectWhite = 3;
+void selectionFrame(toybox::Screen& screen, const fui::Rect& box, const bool light) {
+  if (light) {
+    frame(screen, box, kSelectWhite, true);
+    frame(screen, inset(box, kSelectWhite), kSelectBlack, false);
+    return;
+  }
+  frame(screen, box, kSelectBlack, false);
+  frame(screen, inset(box, kSelectBlack), kSelectWhite, true);
 }
 
 // A clash: a 3px diagonal slash through the cell. Not a frame, because the
@@ -238,7 +243,11 @@ void drawGrid(toybox::Screen& screen, const BoardModel& model) {
   }
 
   // The selection last, over the rules, so no line can cut it.
-  if (game.selected < sk::kCells) selectionFrame(screen, cellRect(device, game.selected));
+  if (game.selected < sk::kCells) {
+    const uint8_t value = sp::valueAt(game, game.selected);
+    const bool dark = sp::isGiven(game, game.selected) || (value != 0 && value == game.focus);
+    selectionFrame(screen, cellRect(device, game.selected), !dark);
+  }
 }
 
 void drawPad(toybox::Screen& screen, const BoardModel& model) {
@@ -503,7 +512,7 @@ void drawFace(toybox::Screen& screen, const fui::Rect& box, const char* face, co
       screen.target().text(toybox::inkCentred(at, cut), text, digit);
       if (clash) clashSlash(screen, at, dark);
     }
-    if (mark == 's') selectionFrame(screen, at);
+    if (mark == 's') selectionFrame(screen, at, true);
   }
   if (outline) {
     frame(screen,
