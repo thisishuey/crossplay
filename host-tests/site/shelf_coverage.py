@@ -43,19 +43,44 @@ def flat(text):
     return " " + re.sub(r"[^a-z0-9]+", " ", text.lower()) + " "
 
 
-pages = {
-    "the site": flat((root / "site/index.html").read_text()),
-    "the README": flat((root / "README.md").read_text()),
+raw_pages = {
+    "the site": (root / "site/index.html").read_text(),
+    "the README": (root / "README.md").read_text(),
 }
+pages = {where: flat(text) for where, text in raw_pages.items()}
 
-for table, kind in (("kGames", "game"), ("kApps", "app")):
-    for title in titles(table):
-        needle = " " + flat(title).strip() + " "
-        for where, text in pages.items():
-            if needle not in text:
-                print(
-                    f"the {kind} {title} is on the shelf and named nowhere in {where}"
-                )
+
+def raw(text):
+    """Casing is still the page's business; punctuation no longer is."""
+    return text.replace("&amp;", "&").replace("&#38;", "&").lower()
+
+
+# Flattening throws punctuation away, so two titles that differ only by it --
+# SUDOKU and SUDOKU+ -- flatten to the same needle, and the page naming one
+# would pass the check for both. For those titles the check also demands the
+# title as written, ignoring case: "sudoku+" in the text.
+shelf_items = [
+    (title, kind)
+    for table, kind in (("kGames", "game"), ("kApps", "app"))
+    for title in titles(table)
+]
+needles = {}
+for title, _ in shelf_items:
+    needles.setdefault(flat(title).strip(), []).append(title)
+
+for title, kind in shelf_items:
+    flattened = flat(title).strip()
+    needle = " " + flattened + " "
+    collides = len(needles[flattened]) > 1
+    for where, text in pages.items():
+        if needle not in text:
+            print(f"the {kind} {title} is on the shelf and named nowhere in {where}")
+        elif collides and raw(title) not in raw(raw_pages[where]):
+            print(
+                f"the {kind} {title} flattens to the same words as "
+                f"{', '.join(t for t in needles[flattened] if t != title)}, "
+                f"and {where} never names it as written"
+            )
 
 
 # ---------------------------------------------------------------------------

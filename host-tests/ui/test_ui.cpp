@@ -42,6 +42,7 @@
 #include "../../src/apps_local/solitaire/SolitaireScreens.h"
 #include "../../src/apps_local/study/StudyScreens.h"
 #include "../../src/apps_local/sudoku/SudokuScreens.h"
+#include "../../src/apps_local/sudokuplus/SudokuPlusScreens.h"
 #include "../../src/apps_local/toybattle/ToyBattleMenus.h"
 #include "../../src/apps_local/toybattle/ToyBattleScreens.h"
 #include "../../src/apps_local/trivia/TriviaScreens.h"
@@ -8809,6 +8810,568 @@ void testTheSudokuFrontDoorNeverSharesInkBetweenTwoLines() {
   }
 }
 
+// --- SUDOKU+ -------------------------------------------------------------------
+
+sudokuplus::Game aSudokuPlusGame(const sudoku::Level level) {
+  uint32_t rng = 0x5EED0000u + static_cast<uint32_t>(level) * 7919u;
+  sudoku::Puzzle puzzle;
+  const bool made = sudoku::generate(puzzle, level, sudokuWorkspace(), rng, 400);
+  CHECK(made);
+  sudokuplus::Game game;
+  sudokuplus::startGame(game, puzzle);
+  return game;
+}
+
+void buildSudokuPlusBoard(Rendered& out, const sudokuplusui::BoardModel& model) {
+  const fui::DeviceContext ctx = device();
+  const fui::InputSnapshot noInput{};
+  toybox::Frame frame(out.target, ctx, noInput, out.interactions);
+  toybox::Screen screen(frame, toybox::themeTokens());
+  sudokuplusui::buildBoard(screen, model);
+}
+
+bool sudokuPlusOnPanel(const fui::Rect& r) { return r.x >= 0 && r.y >= 0 && r.right() <= 480 && r.bottom() <= 800; }
+
+bool sudokuPlusInside(const fui::Rect& inner, const fui::Rect& outer) {
+  return inner.x >= outer.x && inner.y >= outer.y && inner.right() <= outer.right() && inner.bottom() <= outer.bottom();
+}
+
+// Every panel-row value a tap can reach anywhere on the screen.
+std::vector<int> sudokuPlusPanelValues(Rendered& out) {
+  std::vector<int> found;
+  for (int y = 2; y < 800; y += 7) {
+    for (int x = 2; x < 480; x += 7) {
+      const fui::ActionEvent event = out.tap(x, y);
+      if (event.action != sudokuplusui::ActionPanelRow) continue;
+      if (!contains(found, event.value)) found.push_back(event.value);
+    }
+  }
+  return found;
+}
+
+// The same exact-inverse property SUDOKU's grid and pad carry, re-asserted for
+// the copy: it keeps the geometry but owns its own functions, and a copy is
+// exactly where two things that must agree quietly stop agreeing.
+void testTheSudokuPlusGridAndPadHitTestsAreExactInverses() {
+  const fui::DeviceContext ctx = device();
+  bool cellsMapHome = true;
+  bool cellClaimsInside = true;
+  bool keysMapHome = true;
+  bool keyClaimsInside = true;
+  bool disjoint = true;
+  for (int cell = 0; cell < sudoku::kCells; ++cell) {
+    const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
+    for (int y = box.y; y < box.bottom(); ++y) {
+      for (int x = box.x; x < box.right(); ++x) {
+        int got = -1;
+        if (!sudokuplusui::cellAt(ctx, x, y, got) || got != cell) cellsMapHome = false;
+      }
+    }
+  }
+  for (int digit = 1; digit <= sudoku::kSize; ++digit) {
+    const fui::Rect key = sudokuplusui::padKeyRect(ctx, digit);
+    for (int y = key.y; y < key.bottom(); ++y) {
+      for (int x = key.x; x < key.right(); ++x) {
+        int got = -1;
+        if (!sudokuplusui::padKeyAt(ctx, x, y, got) || got != digit) keysMapHome = false;
+      }
+    }
+  }
+  for (int y = 0; y < 800; ++y) {
+    for (int x = 0; x < 480; ++x) {
+      int cell = -1;
+      int digit = -1;
+      const bool onCell = sudokuplusui::cellAt(ctx, x, y, cell);
+      const bool onKey = sudokuplusui::padKeyAt(ctx, x, y, digit);
+      if (onCell && !sudokuPlusInside(fui::makeRect(static_cast<int16_t>(x), static_cast<int16_t>(y), 1, 1),
+                                      sudokuplusui::cellRect(ctx, cell))) {
+        cellClaimsInside = false;
+      }
+      if (onKey && !sudokuPlusInside(fui::makeRect(static_cast<int16_t>(x), static_cast<int16_t>(y), 1, 1),
+                                     sudokuplusui::padKeyRect(ctx, digit))) {
+        keyClaimsInside = false;
+      }
+      if (onCell && onKey) disjoint = false;
+    }
+  }
+  CHECK(cellsMapHome);
+  CHECK(cellClaimsInside);
+  CHECK(keysMapHome);
+  CHECK(keyClaimsInside);
+  CHECK(disjoint);
+}
+
+// Four rows, exactly as tall as the pad, beside it and never over it.
+void testTheSudokuPlusRailIsExactlyAsTallAsThePad() {
+  const fui::DeviceContext ctx = device();
+  const fui::Rect firstKey = sudokuplusui::padKeyRect(ctx, 1);
+  const fui::Rect lastKey = sudokuplusui::padKeyRect(ctx, 9);
+  const fui::Rect top = sudokuplusui::railRowRect(ctx, 0);
+  const fui::Rect bottom = sudokuplusui::railRowRect(ctx, sudokuplusui::kRailRows - 1);
+  CHECK(top.y == firstKey.y);
+  CHECK(bottom.bottom() == lastKey.bottom());
+  for (int row = 0; row < sudokuplusui::kRailRows; ++row) {
+    const fui::Rect rail = sudokuplusui::railRowRect(ctx, row);
+    CHECK(rail.height == 45);
+    CHECK(sudokuPlusOnPanel(rail));
+    CHECK(rail.x >= lastKey.right());
+    if (row > 0) CHECK(rail.y > sudokuplusui::railRowRect(ctx, row - 1).bottom());
+  }
+}
+
+void testTheSudokuPlusRailIsItsFourControls() {
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  Rendered fresh;
+  buildSudokuPlusBoard(fresh, model);
+  CHECK(!fresh.interactions.overflowed());
+  CHECK(fresh.target.find("NOTES") != nullptr);
+  CHECK(fresh.target.find("ERASE") != nullptr);
+  CHECK(fresh.target.find("UNDO") != nullptr);
+  CHECK(fresh.target.find("MENU") != nullptr);
+  // No readout and no HINT on the rail: the spec forbids both.
+  CHECK(fresh.target.find("HINT") == nullptr);
+  for (const auto& run : fresh.target.texts) CHECK(run.text.find("LEFT") == std::string::npos);
+
+  // Nothing to erase or undo on a fresh board, so those two dim and answer
+  // nothing; NOTES and MENU always answer.
+  const std::vector<int> idle = sudokuReachableActions(fresh);
+  CHECK(idle.size() == 2);
+  CHECK(contains(idle, sudokuplusui::ActionNotes));
+  CHECK(contains(idle, sudokuplusui::ActionOpenPanel));
+
+  int cell = 0;
+  while (sudokuplus::isGiven(model.game, cell)) ++cell;
+  sudokuplus::tapCell(model.game, cell);
+  sudokuplus::tapDigit(model.game, 5);
+  Rendered used;
+  buildSudokuPlusBoard(used, model);
+  const std::vector<int> busy = sudokuReachableActions(used);
+  CHECK(busy.size() == 4);
+  CHECK(contains(busy, sudokuplusui::ActionErase));
+  CHECK(contains(busy, sudokuplusui::ActionUndo));
+
+  // The grid and pad are hit-tested by the activity, never by the table.
+  const fui::DeviceContext ctx = device();
+  bool silent = true;
+  for (int c = 0; c < sudoku::kCells; ++c) {
+    const fui::Rect box = sudokuplusui::cellRect(ctx, c);
+    if (used.tap(box.x + box.width / 2, box.y + box.height / 2).action != fui::NO_ACTION) silent = false;
+  }
+  for (int digit = 1; digit <= sudoku::kSize; ++digit) {
+    const fui::Rect key = sudokuplusui::padKeyRect(ctx, digit);
+    if (used.tap(key.x + key.width / 2, key.y + key.height / 2).action != fui::NO_ACTION) silent = false;
+  }
+  CHECK(silent);
+  for (const auto& run : used.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
+}
+
+// The panel is modal, fits the interaction buffer, stays on the 480x800
+// panel, and reaches every one of its rows.
+void testTheSudokuPlusMenuPanelIsModalAndFits() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  int cell = 0;
+  while (sudokuplus::isGiven(model.game, cell)) ++cell;
+  sudokuplus::tapCell(model.game, cell);
+  sudokuplus::tapDigit(model.game, 5);  // so ERASE and UNDO are live beneath
+  model.panelOpen = true;
+  Rendered out;
+  buildSudokuPlusBoard(out, model);
+  CHECK(!out.interactions.overflowed());
+  CHECK(out.interactions.count() <= toybox::kMaxInteractions);
+
+  const std::vector<int> actions = sudokuReachableActions(out);
+  CHECK(actions.size() == 1);
+  CHECK(contains(actions, sudokuplusui::ActionPanelRow));
+
+  const std::vector<int> rows = sudokuPlusPanelValues(out);
+  CHECK(static_cast<int>(rows.size()) == static_cast<int>(sudokuplusui::PanelRow::Count));
+  for (int row = 0; row < static_cast<int>(sudokuplusui::PanelRow::Count); ++row) CHECK(contains(rows, row));
+
+  const fui::Rect sheet = sudokuplusui::panelRect(ctx);
+  CHECK(sudokuPlusOnPanel(sheet));
+  CHECK(sudokuPlusInside(sheet,
+                         fui::makeRect(sudokuplusui::cellRect(ctx, 0).x, sudokuplusui::cellRect(ctx, 0).y, 450, 450)));
+  for (const auto& run : out.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
+  CHECK(out.target.find("HINT") != nullptr);
+  CHECK(out.target.find("FILL NOTES") != nullptr);
+  CHECK(out.target.find("CHECK") != nullptr);
+  CHECK(out.target.find("SHOW REMAINING: ON") != nullptr);
+  CHECK(out.target.find("SHADE PEERS: ON") != nullptr);
+  CHECK(out.target.find("CLOSE") != nullptr);
+
+  // A finished board keeps the toggles and the door, and loses the questions.
+  sudokuplusui::BoardModel solved = model;
+  for (int c = 0; c < sudoku::kCells; ++c) {
+    if (!sudokuplus::isGiven(solved.game, c)) solved.game.entry[c] = solved.game.puzzle.solution[c];
+  }
+  solved.game.solvedFlag = 1;
+  Rendered done;
+  buildSudokuPlusBoard(done, solved);
+  const std::vector<int> left = sudokuPlusPanelValues(done);
+  CHECK(!contains(left, static_cast<int>(sudokuplusui::PanelRow::Hint)));
+  CHECK(!contains(left, static_cast<int>(sudokuplusui::PanelRow::FillNotes)));
+  CHECK(!contains(left, static_cast<int>(sudokuplusui::PanelRow::Check)));
+  CHECK(contains(left, static_cast<int>(sudokuplusui::PanelRow::ShowRemaining)));
+  CHECK(contains(left, static_cast<int>(sudokuplusui::PanelRow::Close)));
+}
+
+void testTheSudokuPlusSolvedSlotIsTheDoor() {
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  for (int c = 0; c < sudoku::kCells; ++c) {
+    if (!sudokuplus::isGiven(model.game, c)) model.game.entry[c] = model.game.puzzle.solution[c];
+  }
+  model.game.solvedFlag = 1;
+  Rendered out;
+  buildSudokuPlusBoard(out, model);
+  const std::vector<int> actions = sudokuReachableActions(out);
+  CHECK(contains(actions, sudokuplusui::ActionSeeResult));
+  CHECK(!contains(actions, sudokuplusui::ActionNotes));
+  CHECK(!contains(actions, sudokuplusui::ActionUndo));
+  CHECK(out.target.find("SOLVED") != nullptr);
+}
+
+// The header says the time, or the answer to the last question until the next
+// edit -- and never a count of what is left.
+void testTheSudokuPlusHeaderCarriesTheClockOrTheAnswer() {
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Medium);
+  model.game.elapsedMs = 12 * 60000 + 59000;
+  Rendered clock;
+  buildSudokuPlusBoard(clock, model);
+  CHECK(clock.target.find("MEDIUM  12 MIN") != nullptr);
+
+  sudokuplus::check(model.game);
+  Rendered answered;
+  buildSudokuPlusBoard(answered, model);
+  CHECK(answered.target.find("ALL CORRECT") != nullptr);
+}
+
+// Grounds, the visual contract the spec pins: the focus solid black, a clue
+// DarkGray with a white numeral, an empty cell the focus rules out LightGray,
+// and everything else -- your own digits included -- plain paper.
+bool sudokuPlusFilled(const Rendered& out, const fui::Rect& box, const fui::PaintKind kind, const fui::Color color) {
+  for (size_t i = 0; i < out.target.fills.size(); ++i) {
+    const fui::Rect& r = out.target.fills[i];
+    const fui::Paint& paint = out.target.fillPaints[i];
+    if (paint.kind == kind && paint.color == color && r.x == box.x && r.y == box.y && r.width == box.width &&
+        r.height == box.height) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool sudokuPlusAnyGround(const Rendered& out, const fui::Rect& box) {
+  return sudokuPlusFilled(out, box, fui::PaintKind::Solid, fui::Color::Black) ||
+         sudokuPlusFilled(out, box, fui::PaintKind::Dither, fui::Color::DarkGray) ||
+         sudokuPlusFilled(out, box, fui::PaintKind::Dither, fui::Color::LightGray);
+}
+
+const FakeTarget::TextRun* sudokuPlusDigitIn(const Rendered& out, const fui::Rect& box) {
+  for (const auto& run : out.target.texts) {
+    if (run.style.font == toybox::kDisplayFont && run.rect.x == box.x && run.rect.width == box.width) {
+      const int16_t mid = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
+      if (mid >= box.y && mid < box.bottom()) return &run;
+    }
+  }
+  return nullptr;
+}
+
+void testTheSudokuPlusGroundsReadInOrder() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  int clue = 0;
+  while (!sudokuplus::isGiven(model.game, clue)) ++clue;
+  // A digit of your own that is NOT the focus, so the paper ground is exercised.
+  const uint8_t focus = model.game.puzzle.given[clue];
+  int mine = 0;
+  while (sudokuplus::isGiven(model.game, mine) || model.game.puzzle.solution[mine] == focus) ++mine;
+  model.game.entry[mine] = model.game.puzzle.solution[mine];
+  model.game.focus = focus;
+  Rendered out;
+  buildSudokuPlusBoard(out, model);
+
+  int shaded = 0;
+  int plain = 0;
+  int clues = 0;
+  for (int cell = 0; cell < sudoku::kCells; ++cell) {
+    const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
+    const uint8_t value = sudokuplus::valueAt(model.game, cell);
+    const FakeTarget::TextRun* digit = sudokuPlusDigitIn(out, box);
+    if (value == focus) {
+      CHECK(sudokuPlusFilled(out, box, fui::PaintKind::Solid, fui::Color::Black));
+      CHECK(digit != nullptr && digit->style.color == fui::Color::White);
+    } else if (sudokuplus::isGiven(model.game, cell)) {
+      ++clues;
+      CHECK(sudokuPlusFilled(out, box, fui::PaintKind::Dither, fui::Color::DarkGray));
+      CHECK(digit != nullptr && digit->style.color == fui::Color::White);
+    } else if (sudokuplus::isShadedPeer(model.game, cell)) {
+      ++shaded;
+      CHECK(sudokuPlusFilled(out, box, fui::PaintKind::Dither, fui::Color::LightGray));
+      CHECK(!sudokuPlusFilled(out, box, fui::PaintKind::Dither, fui::Color::DarkGray));
+    } else {
+      ++plain;
+      CHECK(!sudokuPlusAnyGround(out, box));
+      if (value != 0) CHECK(digit != nullptr && digit->style.color == fui::Color::Black);
+    }
+  }
+  CHECK(shaded > 0);
+  CHECK(plain > 0);
+  CHECK(clues > 0);
+}
+
+// One selection style on every ground: 2px black outside, 3px white inside.
+// Asserted on a paper cell and on a dark clue, the two ends of the range.
+void testTheSudokuPlusSelectionIsOneStyleEverywhere() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel base;
+  base.game = aSudokuPlusGame(sudoku::Level::Easy);
+  int clue = 0;
+  while (!sudokuplus::isGiven(base.game, clue)) ++clue;
+  int empty = 0;
+  while (sudokuplus::valueAt(base.game, empty) != 0) ++empty;
+  const int cells[] = {clue, empty};
+  for (const int cell : cells) {
+    sudokuplusui::BoardModel model = base;
+    model.game.selected = static_cast<uint8_t>(cell);
+    Rendered out;
+    buildSudokuPlusBoard(out, model);
+    const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
+    bool outer = false;
+    bool inner = false;
+    for (size_t i = 0; i < out.target.fills.size(); ++i) {
+      const fui::Rect& r = out.target.fills[i];
+      const fui::Paint& paint = out.target.fillPaints[i];
+      if (paint.kind != fui::PaintKind::Solid) continue;
+      if (paint.color == fui::Color::Black && r.x == box.x && r.y == box.y && r.width == box.width && r.height == 2) {
+        outer = true;
+      }
+      if (paint.color == fui::Color::White && r.x == box.x + 2 && r.y == box.y + 2 && r.width == box.width - 4 &&
+          r.height == 3) {
+        inner = true;
+      }
+    }
+    CHECK(outer);
+    CHECK(inner);
+  }
+}
+
+// A clash is a slash, never a frame, so it cannot be mistaken for the
+// selection -- white on a dark clue, black on paper.
+void testTheSudokuPlusClashIsASlash() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  int clue = 0;
+  while (!sudokuplus::isGiven(model.game, clue)) ++clue;
+  int peer = 0;
+  while (sudokuplus::isGiven(model.game, peer) || !sudoku::arePeers(peer, clue)) ++peer;
+  model.game.entry[peer] = model.game.puzzle.given[clue];
+  Rendered out;
+  buildSudokuPlusBoard(out, model);
+  auto slashIn = [&out](const fui::Rect& box, const fui::Color color) {
+    for (const auto& seg : out.target.lines) {
+      if (seg.width != toybox::kRule || seg.color != color) continue;
+      if (seg.a.x >= box.x && seg.a.x < box.right() && seg.b.x >= box.x && seg.b.x < box.right() && seg.a.y >= box.y &&
+          seg.a.y < box.bottom() && seg.b.y >= box.y && seg.b.y < box.bottom() && seg.a.x != seg.b.x &&
+          seg.a.y != seg.b.y) {
+        return true;
+      }
+    }
+    return false;
+  };
+  CHECK(slashIn(sudokuplusui::cellRect(ctx, peer), fui::Color::Black));
+  CHECK(slashIn(sudokuplusui::cellRect(ctx, clue), fui::Color::White));
+}
+
+// The header's clock across the hour, where its format changes.
+void testTheSudokuPlusHeaderClockCrossesTheHour() {
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Medium);
+  const std::string level = sudoku::levelName(model.game.puzzle.level);
+  struct Case {
+    uint32_t ms;
+    const char* clock;
+  };
+  const Case cases[] = {{59 * 60000 + 59000, "59 MIN"}, {60 * 60000, "1H 00M"}, {65 * 60000 + 30000, "1H 05M"}};
+  for (const Case& one : cases) {
+    model.game.elapsedMs = one.ms;
+    Rendered out;
+    buildSudokuPlusBoard(out, model);
+    CHECK(out.target.find((level + "  " + one.clock).c_str()) != nullptr);
+  }
+
+  // While a new puzzle is carved, the header names the level being CARVED,
+  // not the one still in `game`.
+  model.generating = true;
+  model.generatingLevel =
+      model.game.puzzle.level == sudoku::Level::Expert ? sudoku::Level::Easy : sudoku::Level::Expert;
+  Rendered carving;
+  buildSudokuPlusBoard(carving, model);
+  CHECK(carving.target.find(sudoku::levelName(model.generatingLevel)) != nullptr);
+  CHECK(carving.target.find(level.c_str()) == nullptr);
+
+  // The longest notice is drawn whole, on the panel.
+  model.generating = false;
+  model.game.notice = static_cast<uint8_t>(sudokuplus::Notice::NothingToFill);
+  Rendered nothing;
+  buildSudokuPlusBoard(nothing, model);
+  const FakeTarget::TextRun* notice = nothing.target.find("NOTHING TO FILL");
+  CHECK(notice != nullptr);
+  if (notice != nullptr) CHECK(sudokuPlusOnPanel(notice->rect));
+}
+
+// The pad: the focused key's border is kFrame and every other key's kHairline,
+// and SHOW REMAINING puts a count in each unfinished key and none when off.
+void testTheSudokuPlusPadSaysFocusAndRemaining() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  model.game.focus = 4;
+
+  auto topBar = [](const Rendered& out, const fui::Rect& key, const int16_t weight) {
+    for (size_t i = 0; i < out.target.fills.size(); ++i) {
+      const fui::Rect& r = out.target.fills[i];
+      const fui::Paint& paint = out.target.fillPaints[i];
+      if (paint.kind == fui::PaintKind::Solid && paint.color == fui::Color::Black && r.x == key.x && r.y == key.y &&
+          r.width == key.width && r.height == weight) {
+        return true;
+      }
+    }
+    return false;
+  };
+  auto countIn = [](const Rendered& out, const fui::Rect& key) -> const FakeTarget::TextRun* {
+    for (const auto& run : out.target.texts) {
+      if (run.style.font != toybox::kTileFont) continue;
+      const int16_t midX = static_cast<int16_t>(run.rect.x + run.rect.width / 2);
+      const int16_t midY = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
+      if (midX >= key.x && midX < key.right() && midY >= key.y && midY < key.bottom()) return &run;
+    }
+    return nullptr;
+  };
+
+  Rendered on;
+  buildSudokuPlusBoard(on, model);
+  model.game.showRemaining = 0;
+  Rendered off;
+  buildSudokuPlusBoard(off, model);
+  for (int digit = 1; digit <= sudoku::kSize; ++digit) {
+    const fui::Rect key = sudokuplusui::padKeyRect(ctx, digit);
+    if (digit == 4) {
+      CHECK(topBar(on, key, toybox::kFrame));
+    } else {
+      CHECK(topBar(on, key, toybox::kHairline));
+      CHECK(!topBar(on, key, toybox::kFrame));
+    }
+    const int remaining = sudokuplus::remainingCount(model.game, digit);
+    const FakeTarget::TextRun* count = countIn(on, key);
+    if (remaining > 0) {
+      CHECK(count != nullptr && count->text == std::to_string(remaining));
+    } else {
+      CHECK(count == nullptr);
+    }
+    CHECK(countIn(off, key) == nullptr);
+  }
+}
+
+// A pencilled mark of the focused digit is knocked out of a black chip.
+void testTheSudokuPlusFocusedNoteIsAChip() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  int cell = 0;
+  while (sudokuplus::valueAt(model.game, cell) != 0) ++cell;
+  const sudoku::Mask open = static_cast<sudoku::Mask>(sudoku::kAllDigits & ~sudokuplus::takenAround(model.game, cell));
+  const int focused = sudoku::lowestDigit(open);
+  CHECK(focused != 0);
+  int other = 0;
+  for (int d = focused + 1; d <= sudoku::kSize && other == 0; ++d) {
+    if ((open & sudoku::bitFor(d)) != 0) other = d;
+  }
+  model.game.note[cell] = static_cast<sudoku::Mask>(sudoku::bitFor(focused) | (other != 0 ? sudoku::bitFor(other) : 0));
+  model.game.focus = static_cast<uint8_t>(focused);
+  Rendered out;
+  buildSudokuPlusBoard(out, model);
+  const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
+
+  int chips = 0;
+  for (size_t i = 0; i < out.target.fills.size(); ++i) {
+    const fui::Rect& r = out.target.fills[i];
+    const fui::Paint& paint = out.target.fillPaints[i];
+    if (paint.kind != fui::PaintKind::Solid || paint.color != fui::Color::Black) continue;
+    if (r.x > box.x && r.right() < box.right() && r.y > box.y && r.bottom() < box.bottom() && r.width == r.height &&
+        r.width > 4) {
+      ++chips;
+    }
+  }
+  CHECK(chips == 1);
+  bool whiteFocus = false;
+  bool blackOther = other == 0;
+  for (const auto& run : out.target.texts) {
+    if (run.style.font != toybox::kTileFont || run.rect.x < box.x || run.rect.right() > box.right()) continue;
+    const int16_t midY = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
+    if (midY < box.y || midY >= box.bottom()) continue;
+    if (run.text == std::to_string(focused) && run.style.color == fui::Color::White) whiteFocus = true;
+    if (other != 0 && run.text == std::to_string(other) && run.style.color == fui::Color::Black) blackOther = true;
+  }
+  CHECK(whiteFocus);
+  CHECK(blackOther);
+}
+
+void testEverySudokuPlusScreenStaysOnThePanel() {
+  const fui::DeviceContext ctx = device();
+  const fui::InputSnapshot noInput{};
+  const sudokuplus::Game game = aSudokuPlusGame(sudoku::Level::Medium);
+  {
+    sudokuplusui::MenuModel model;
+    model.hasGame = true;
+    model.game = game;
+    model.level = game.puzzle.level;
+    Rendered out;
+    toybox::Frame frame(out.target, ctx, noInput, out.interactions);
+    toybox::Screen screen(frame, toybox::themeTokens());
+    sudokuplusui::buildMenu(screen, model);
+    CHECK(!out.interactions.overflowed());
+    const std::vector<int> actions = sudokuReachableActions(out);
+    CHECK(contains(actions, sudokuplusui::ActionPlay));
+    CHECK(contains(actions, sudokuplusui::ActionMenuRow));
+    CHECK(out.target.find("RESUME") != nullptr);
+    for (const auto& run : out.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
+  }
+  {
+    sudokuplusui::ResultModel model;
+    model.level = sudoku::Level::Expert;
+    model.hardest = sudoku::Technique::XYWing;
+    model.elapsedMs = 3721000;
+    model.hintsUsed = 1;
+    Rendered out;
+    toybox::Frame frame(out.target, ctx, noInput, out.interactions);
+    toybox::Screen screen(frame, toybox::themeTokens());
+    sudokuplusui::buildResult(screen, model);
+    CHECK(!out.interactions.overflowed());
+    const std::vector<int> actions = sudokuReachableActions(out);
+    CHECK(contains(actions, sudokuplusui::ActionAgain));
+    CHECK(contains(actions, sudokuplusui::ActionDone));
+    for (const auto& run : out.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
+  }
+  for (int page = 0; page < sudokuplusui::howToPages(); ++page) {
+    sudokuplusui::HowToModel model;
+    model.page = page;
+    Rendered out;
+    toybox::Frame frame(out.target, ctx, noInput, out.interactions);
+    toybox::Screen screen(frame, toybox::themeTokens());
+    sudokuplusui::buildHowTo(screen, model);
+    CHECK(!out.interactions.overflowed());
+    CHECK(contains(sudokuReachableActions(out), sudokuplusui::ActionHowToNext));
+    for (const auto& run : out.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
+  }
+}
+
 // --- FOREHEAD ---------------------------------------------------------------
 
 namespace {
@@ -13789,6 +14352,19 @@ int main() {
   testEverySudokuLessonPagesAndClearsItsButton();
   testTheSudokuOrnamentCarriesTheGame();
   testTheSudokuFrontDoorNeverSharesInkBetweenTwoLines();
+  testTheSudokuPlusGridAndPadHitTestsAreExactInverses();
+  testTheSudokuPlusRailIsExactlyAsTallAsThePad();
+  testTheSudokuPlusRailIsItsFourControls();
+  testTheSudokuPlusMenuPanelIsModalAndFits();
+  testTheSudokuPlusSolvedSlotIsTheDoor();
+  testTheSudokuPlusHeaderCarriesTheClockOrTheAnswer();
+  testTheSudokuPlusGroundsReadInOrder();
+  testTheSudokuPlusSelectionIsOneStyleEverywhere();
+  testTheSudokuPlusClashIsASlash();
+  testTheSudokuPlusHeaderClockCrossesTheHour();
+  testTheSudokuPlusPadSaysFocusAndRemaining();
+  testTheSudokuPlusFocusedNoteIsAChip();
+  testEverySudokuPlusScreenStaysOnThePanel();
   testPicrossBoardSpendsFewInteractions();
   testPicrossGridHitTestIsExactInverse();
   testPicrossDrawsEveryClue();
