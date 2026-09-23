@@ -93,10 +93,16 @@ fake() {  # name, exit code, stdout
 checks=0
 failed=0
 
+# THIS FORK INVERTS IT. Upstream asserts the triggers are ABSENT because its
+# local gate builds both device envs; the fork is developed from web sessions,
+# which cannot build for a device at all, so this workflow is the only device
+# build a fork change ever gets. crossplay-ci.yml explains it in its header.
+# Asserted PRESENT, because the sync that brought upstream's removal in dropped
+# them without a conflict and CI then simply stopped running on pull requests.
 checks=$((checks + 1))
-if [ "$BLOCKING_TRIGGER" = yes ]; then
+if [ "$BLOCKING_TRIGGER" != yes ]; then
   failed=$((failed + 1))
-  echo "FAIL ci  crossplay-ci.yml has a push or pull_request trigger again. It is a nightly audit: a blocking trigger puts a 20-minute cross-compile back in front of every merge, and with crossplay-autorelease.yml gone nothing downstream waits for its verdict anyway. Landing and publishing are scripts_local/ship.sh."
+  echo "FAIL ci  crossplay-ci.yml has no push or pull_request trigger. Upstream removed them on purpose (e3e9a3f), but this fork has no local device build: without them nothing compiles a fork change for a device before it lands. Put them back; the header of crossplay-ci.yml says why."
 fi
 
 checks=$((checks + 1))
@@ -390,7 +396,11 @@ fi  # BLOCKING_TRIGGER
 # trigger the workflow no longer has, and each encodes a night lost to it, so
 # they are re-armed rather than deleted. Not re-indented: the bodies contain
 # heredocs whose terminators must stay at column 0.
-if [ "$BLOCKING_TRIGGER" = yes ]; then
+#
+# Also gated on the release workflow existing: the step it asks for policed
+# crossplay-release.yml, which the 1.13.18 sync deleted, and a check that a
+# change to a missing file writes release prose guards nothing.
+if [ "$BLOCKING_TRIGGER" = yes ] && [ -f "$HERE/../../.github/workflows/crossplay-release.yml" ]; then
 # -- the packaging change must say what is new -------------------------------
 #
 # scripts_local/device-build-needed.sh calls

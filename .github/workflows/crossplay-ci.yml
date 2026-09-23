@@ -26,12 +26,41 @@
 # in two weeks, and the local gate builds the same envs. That is the whole
 # argument for moving it here.
 #
-# NO push OR pull_request TRIGGER, and that is the point rather than an
-# oversight. Adding one back restores the duplicate-build pipeline this
-# replaced; host-tests/ci asserts the triggers stay as they are.
+# NO push OR pull_request TRIGGER upstream, and that is the point there rather
+# than an oversight: adding one back restores the duplicate-build pipeline this
+# replaced.
+#
+# THIS FORK PUTS THEM BACK. The argument above rests on a local gate that
+# builds both device envs, and the fork has none: it is developed from web
+# sessions, where PlatformIO cannot fetch the ESP32 core, so check.sh never
+# reaches a device build and ship.sh cannot run. This workflow is the only
+# place a fork change is ever compiled for a device, so it has to run on the
+# pull request, before the merge, or not usefully at all. The fork has no
+# autorelease and no release on push, so the four-builds-per-merge cascade the
+# note describes cannot happen here: a merge costs one pull request run and
+# one xteink run. The triggers are upstream's own last ones (e3e9a3f^),
+# including the documentation paths-ignore of card #547, and host-tests/ci
+# re-arms the checks that encode why each part of them is shaped as it is.
 name: CrossPlay
 
 on:
+  push:
+    branches: [xteink]
+    paths-ignore:
+      - 'site/emulator/**'
+      - 'site/emulator-manifest.json'
+      - '**/*.md'
+      - '*.md'
+      - 'docs/**'
+      - '!docs/release-notes.md'
+      - '!docs/release-body.md'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '*.md'
+      - 'docs/**'
+      - '!docs/release-notes.md'
+      - '!docs/release-body.md'
   schedule:
     # 09:00 UTC, which is the early hours in Mario's day and well clear of a
     # working evening. Nothing reads the result in a hurry.
@@ -41,30 +70,23 @@ on:
 permissions:
   contents: read
 
-# One nightly run, and nothing to supersede it.
+# One run per commit on xteink, one per branch elsewhere.
 #
-# This group used to carry a long expression and a longer comment, because on
-# this workflow's old push/pull_request triggers concurrency was load-bearing
-# and every simple version of it lost runs. That whole class of problem is
-# gone with the triggers, but the lesson is not obvious and is worth keeping,
-# because the next person to add a concurrency group anywhere here will reach
-# for cancel-in-progress and read it wrong:
+# A concurrency group holds at most ONE run in progress and ONE run pending.
+# cancel-in-progress governs only the first. NOTHING governs the second: when a
+# third run arrives GitHub cancels whatever was pending to make room, whether
+# cancel-in-progress is true or false. Measured upstream 2026-09-05 over 36
+# hours: 41 runs of this workflow on xteink were cancelled and
+# `actions/runs/<id>/jobs` returned total_count 0 for every one of them.
 #
-#   A concurrency group holds at most ONE run in progress and ONE run pending.
-#   cancel-in-progress governs only the first. NOTHING governs the second:
-#   when a third run arrives GitHub cancels whatever was pending to make room,
-#   whether cancel-in-progress is true or false. Measured 2026-09-05 over 36
-#   hours: 41 runs of this workflow on xteink were cancelled and
-#   `actions/runs/<id>/jobs` returned total_count 0 for every one of them.
-#   Not one had started a job. Queueing did not fix it because queueing was
-#   never what it did.
-#
-# A nightly cron and a hand dispatch cannot collide the way merges did, so the
-# group is just the workflow and a second dispatch waits rather than killing
-# the first.
+# So on xteink the group is the COMMIT: two merges never share one, nothing
+# pends behind anything, and GitHub has nothing to cancel. A pull request keeps
+# the branch group and keeps superseding, because a push there really does
+# replace the commit before it. The nightly run and a hand dispatch land in the
+# xteink or branch group the same way.
 concurrency:
-  group: crossplay-nightly
-  cancel-in-progress: false
+  group: crossplay-ci-${{ github.ref == 'refs/heads/xteink' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/xteink' }}
 
 jobs:
   build:
