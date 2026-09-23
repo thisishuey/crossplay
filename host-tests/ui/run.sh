@@ -76,6 +76,7 @@ mkdir -p "$BUILD_DIR"
   ../../src/apps_local/wavelength/WavelengthCore.cpp \
   ../../src/apps_local/wavelength/WavelengthScreens.cpp \
   ../../src/apps_local/sudoku/SudokuScreens.cpp \
+  ../../src/apps_local/sudokuplus/SudokuPlusScreens.cpp \
   ../../src/apps_local/xkcd/XkcdScreens.cpp \
   ../../src/apps_local/wallpapers/WallpapersCore.cpp \
   ../../src/apps_local/wallpapers/WallpapersScreens.cpp \

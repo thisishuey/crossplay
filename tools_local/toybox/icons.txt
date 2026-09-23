@@ -254,6 +254,12 @@ toybattle = share-2
 # game, and every game here is played with one), `brain` (mush at 32px).
 sudoku      = hash
 
+# SUDOKU+. The same `hash`, on purpose: it is the same game with a different
+# hand on the pencil, and the `+` in its label is what tells the two rows
+# apart. A second grid-shaped mark would be the grid-2x2 / grid-3x3 confusion
+# the sudoku note above exists to avoid.
+sudokuplus  = hash
+
 # GO. Nine dots in a three by three: stones standing ON the crossings, which is
 # the one thing about this board that is not true of any other board on the
 # shelf -- every other game here puts its pieces INSIDE squares. `grip` is that

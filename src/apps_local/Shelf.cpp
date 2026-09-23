@@ -38,6 +38,7 @@
 #include "solitaire/SolitaireActivity.h"
 #include "study/StudyActivity.h"
 #include "sudoku/SudokuActivity.h"
+#include "sudokuplus/SudokuPlusActivity.h"
 #include "toybattle/ToyBattleActivity.h"
 #include "trivia/TriviaActivity.h"
 #include "ui/ToyboxIcons.h"
@@ -69,6 +70,7 @@ constexpr shelf::Item kGames[] = {
     {"KNUCKLEBONES", &icon_knucklebones_32, &KnucklebonesActivity::create},
     {"MINESWEEPER", &icon_minesweeper_32, &MinesweeperActivity::create},
     {"SUDOKU", &icon_sudoku_32, &SudokuActivity::create},
+    {"SUDOKU+", &icon_sudokuplus_32, &SudokuPlusActivity::create},
     {"PICROSS", &icon_picross_32, &PicrossActivity::create},
     {"TOY BATTLE", &icon_toybattle_32, &ToyBattleActivity::create},
     {"FOREHEAD", &icon_forehead_32, &ForeheadActivity::create},
