@@ -31,10 +31,12 @@ against SUDOKU's `sudoku.sav`), not a record.
 | MENU                                     | The panel below, over the grid.                                            |
 
 **Focus is how you read the board.** Every copy of the focused digit is
-inverted, the pad key for it gets a heavy frame, a pencilled mark of it is
-knocked out of a black chip, and -- with SHADE PEERS on -- every empty cell
-sharing a row, column or box with a copy turns LightGray. What is left unshaded is
-where that digit can still go.
+inverted, the pad key for it gets a heavy frame, and a pencilled mark of it is
+knocked out of a black chip.
+
+**SHADE PEERS lights the selected cell's row, column and box** in LightGray:
+the three units the next digit has to agree with. Clues keep their DarkGray and
+the focused digit its black; with nothing selected, nothing is shaded.
 
 Selection and focus are separate facts. Tapping an empty cell leaves the focus
 where it was, so you can walk the board with the 7s still lit.
@@ -96,8 +98,8 @@ nobody ever saw.
 
 - A clue is a DarkGray dither with a WHITE numeral.
 - The focused digit is solid black with a white numeral, clue or not.
-- A shaded peer (always an empty cell) is a LightGray dither, the lightest
-  ground on the board.
+- A shaded peer (a cell in the selected cell's row, column or box, not a clue)
+  is a LightGray dither, the lightest ground on the board.
 - Everything else -- empty cells and your own digits -- is plain paper with a
   black numeral. No underline, no mark: your digits are simply the ones not on
   grey.

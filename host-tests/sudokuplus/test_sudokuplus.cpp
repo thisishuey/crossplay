@@ -252,34 +252,38 @@ void testErase() {
 // column or box with a cell holding the focused digit, walked by coordinates
 // rather than through arePeers.
 bool independentlyShaded(const sp::Game& game, const int cell) {
-  if (game.focus == 0 || sp::valueAt(game, cell) != 0) return false;
+  if (game.shadePeers == 0 || game.selected >= sp::kCells) return false;
+  if (sp::isGiven(game, cell)) return false;
+  const uint8_t value = sp::valueAt(game, cell);
+  if (value != 0 && value == game.focus) return false;
   const int row = cell / 9;
   const int column = cell % 9;
-  for (int other = 0; other < sp::kCells; ++other) {
-    if (other == cell || sp::valueAt(game, other) != game.focus) continue;
-    const int r = other / 9;
-    const int c = other % 9;
-    if (r == row || c == column || (r / 3 == row / 3 && c / 3 == column / 3)) return true;
-  }
-  return false;
+  const int r = game.selected / 9;
+  const int c = game.selected % 9;
+  return r == row || c == column || (r / 3 == row / 3 && c / 3 == column / 3);
 }
 
 void testFocusShading() {
   sp::Game game = aGame(sudoku::Level::Medium, 0x1006u);
-  for (int digit = 1; digit <= sp::kSize; ++digit) {
-    game.focus = static_cast<uint8_t>(digit);
+  for (int selected = 0; selected < sp::kCells; ++selected) {
+    game.selected = static_cast<uint8_t>(selected);
+    game.focus = static_cast<uint8_t>(1 + selected % sp::kSize);
     int shaded = 0;
     bool agrees = true;
     for (int cell = 0; cell < sp::kCells; ++cell) {
       const bool got = sp::isShadedPeer(game, cell);
       if (got != independentlyShaded(game, cell)) agrees = false;
       if (got) ++shaded;
-      // A cell holding the digit is inverted, never shaded.
-      if (sp::valueAt(game, cell) == digit && got) agrees = false;
+      // A clue keeps its DarkGray and the focused digit its black.
+      if (got && (sp::isGiven(game, cell) || sp::valueAt(game, cell) == game.focus)) agrees = false;
     }
-    check(agrees, "shading is exactly the empty peers of every copy of the focus");
-    if (sp::placedCount(game, digit) > 0) check(shaded > 0, "a placed digit shades something");
+    check(agrees, "shading is exactly the selected cell's row, column and box, less clues and the focus");
+    check(shaded > 0 && shaded <= 21, "a selection shades at most its 21 cells");
   }
+  // The selection's units, and nothing that merely shares a digit with it.
+  game.selected = 0;
+  game.focus = 0;
+  check(!sp::isShadedPeer(game, 80), "a cell outside the selection's units stays paper");
   game.shadePeers = 0;
   bool none = true;
   for (int cell = 0; cell < sp::kCells; ++cell) {
@@ -287,12 +291,13 @@ void testFocusShading() {
   }
   check(none, "SHADE PEERS off shades nothing");
   game.shadePeers = 1;
-  game.focus = 0;
+  game.selected = sp::kNoCell;
+  game.focus = 5;
   none = true;
   for (int cell = 0; cell < sp::kCells; ++cell) {
     if (sp::isShadedPeer(game, cell)) none = false;
   }
-  check(none, "no focus shades nothing");
+  check(none, "a focus with nothing selected shades nothing");
 }
 
 void testRemaining() {

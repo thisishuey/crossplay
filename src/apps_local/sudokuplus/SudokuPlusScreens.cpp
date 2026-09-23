@@ -187,8 +187,8 @@ void drawGrid(toybox::Screen& screen, const BoardModel& model) {
     // One ground per cell. The focused digit is the loudest thing on the board
     // because it is the question being asked of it: solid black, clue or not.
     // A clue is DarkGray with a white numeral, your own digits sit on paper,
-    // and an empty cell the focus rules out is LightGray -- the lightest ground
-    // there is, and never one a digit stands on.
+    // and the selected cell's row, column and box are LightGray -- the lightest
+    // ground there is, under a black numeral where one of your digits stands.
     const bool dark = focused || clue;
     if (focused) {
       screen.target().fill(box, fui::Paint::solid(fui::Color::Black));
@@ -448,12 +448,12 @@ struct Lesson {
 // one box before the player has done anything.
 const Lesson kLessons[] = {
     {"THE RULE", "EVERY ROW, COLUMN AND BOX HOLDS 1 TO 9.", "NO DIGIT TWICE IN ANY OF THEM.", "123456789", nullptr, 0},
-    {"WRITING", "TAP A CELL, THEN A DIGIT TO WRITE IT.", "SAME DIGIT CLEARS IT; SO DO ERASE AND UNDO.", "A.C.s...I",
-     "A.C.5...I", 0},
+    {"WRITING", "TAP A CELL, THEN A DIGIT TO WRITE IT.", "SAME DIGIT CLEARS IT; SO DO ERASE AND UNDO.", "A-C-s---I",
+     "A-C-5---I", 0},
     {"NOTES", "TURN NOTES ON, THEN TAP DIGITS TO PENCIL.", "MENU CAN PENCIL EVERY CELL AT ONCE.", "A.C.s...I",
      "A.C.p...I", 0},
-    {"READING", "TAP A DIGIT TO LIGHT EVERY COPY OF IT.", "SHADED CELLS ARE OUT; KEYS COUNT HOW MANY LEFT.",
-     "A.C.....I", "a-C-----I", 0},
+    {"READING", "TAP A DIGIT TO LIGHT EVERY COPY OF IT.", "KEYS COUNT HOW MANY OF EACH ARE LEFT.", "A.C.....I",
+     "a.C.....I", 0},
     {"MISTAKES", "A DIGIT THAT CLASHES IS STRUCK THROUGH.", "HINT AND CHECK ARE IN THE MENU.", "A.C.s...I", "A.?.!...I",
      3},
 };

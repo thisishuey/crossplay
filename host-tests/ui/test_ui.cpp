@@ -9093,6 +9093,10 @@ void testTheSudokuPlusGroundsReadInOrder() {
   while (sudokuplus::isGiven(model.game, mine) || model.game.puzzle.solution[mine] == focus) ++mine;
   model.game.entry[mine] = model.game.puzzle.solution[mine];
   model.game.focus = focus;
+  // Select an empty cell, which is what shades: its row, column and box.
+  int empty = 0;
+  while (sudokuplus::valueAt(model.game, empty) != 0) ++empty;
+  model.game.selected = static_cast<uint8_t>(empty);
   Rendered out;
   buildSudokuPlusBoard(out, model);
 

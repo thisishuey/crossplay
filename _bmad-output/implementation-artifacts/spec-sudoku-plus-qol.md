@@ -30,6 +30,7 @@ context:
   - CLOSE.
   - The toggles default to ON and persist in the save.
 - The header shows the elapsed time, repainted at most once a minute.
+- (Renegotiated after smoke testing) SHADE PEERS shades the SELECTED cell's row, column and box, not the peers of every copy of the focused digit. Clues and focused digits keep their own grounds; with nothing selected, nothing is shaded.
 
 ## Boundaries & Constraints
 

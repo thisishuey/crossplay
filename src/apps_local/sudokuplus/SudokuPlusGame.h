@@ -181,17 +181,17 @@ inline bool isSolved(const Game& game) {
   return true;
 }
 
-// An empty cell the focused digit can no longer go in, because a copy of it
-// already stands in the cell's row, column or box. That is SHADE PEERS: the
-// board answering "where can this digit NOT go" before you ask.
+// A cell in the selected cell's row, column or box: SHADE PEERS. It lights
+// the three units the next digit has to agree with, around the one cell you
+// are about to write. Clues and copies of the focused digit keep their own
+// grounds, so they are never shaded; the selected cell is, and its frame says
+// which one it is.
 inline bool isShadedPeer(const Game& game, const int cell) {
-  if (game.shadePeers == 0 || game.focus == 0) return false;
-  if (valueAt(game, cell) != 0) return false;
-  for (int other = 0; other < kCells; ++other) {
-    if (valueAt(game, other) != game.focus) continue;
-    if (sudoku::arePeers(cell, other)) return true;
-  }
-  return false;
+  if (game.shadePeers == 0 || game.selected >= kCells) return false;
+  if (isGiven(game, cell)) return false;
+  const uint8_t value = valueAt(game, cell);
+  if (value != 0 && value == game.focus) return false;
+  return cell == game.selected || sudoku::arePeers(cell, game.selected);
 }
 
 // The cell a digit would be written to: selected, and not a clue.
