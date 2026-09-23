@@ -10,7 +10,7 @@ context:
   - '{project-root}/docs/apps/sudokuplus.md'
 ---
 
-<frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
+<frozen-after-approval reason="human-owned intent: do not modify unless human renegotiates">
 
 ## Intent
 
@@ -58,7 +58,7 @@ context:
 
 - `src/apps_local/sudokuplus/SudokuPlusGame.h:tapDigit` -- the two write branches (note, entry). Add `game.selected = kNoCell` after the `commitEdit` in each. Leave `hasTarget`-false focus-only path and refusals untouched. `takeHint` still selects.
 - `src/apps_local/sudokuplus/SudokuPlusActivity.{h,cpp}` -- add `bool flashOnNextPaint`, set on every panel open/close transition (ActionOpenPanel, `choosePanelRow` when it closes, BackAction::ClosePanel); `render()` ends `renderer.displayBuffer(flashOnNextPaint ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH); flashOnNextPaint = false;` -- the Picross pattern (`src/apps_local/picross/PicrossActivity.cpp:454`). Grid/pad hit-test is already gated on `!panelOpen`.
-- `src/apps_local/sudokuplus/SudokuPlusScreens.cpp` -- `buildBoard`: when `panelOpen`, draw chrome + `drawPanel` only (no grid/pad/rail, so no dead rail actions). `panelRect`: page content area (x = `boardLeft`, width `kBoardOuter`, y = `kBoardTop`, bottom = 800 − `toybox::kMargin`). Panel rows use `toybox::kRowHeight` (62). Drop the `kPanelHeight <= kGridSide` assert and the "over the grid" rationale; add a static_assert the rows fit. `drawNotes` (line ~167): unfocused marks grey (ring stroke and numeral colour), focused mark black — digits: black numeral, no chip; dots: solid black round dot (radius `kNoteShape/2`), no square. Knock out paper under each grey mark on a shaded cell (dots already fill white; digits need a paper patch) so grey never sits on LightGray dither. The rail's MENU `StateSelected` while open becomes moot.
+- `src/apps_local/sudokuplus/SudokuPlusScreens.cpp` -- `buildBoard`: when `panelOpen`, draw chrome + `drawPanel` only (no grid/pad/rail, so no dead rail actions). `panelRect`: page content area (x = `boardLeft`, width `kBoardOuter`, y = `kBoardTop`, bottom = 800 - `toybox::kMargin`). Panel rows use `toybox::kRowHeight` (62). Drop the `kPanelHeight <= kGridSide` assert and the "over the grid" rationale; add a static_assert the rows fit. `drawNotes` (line ~167): unfocused marks grey (ring stroke and numeral colour), focused mark black. Digits: black numeral, no chip; dots: solid black round dot (radius `kNoteShape/2`), no square. Knock out paper under each grey mark on a shaded cell (dots already fill white; digits need a paper patch) so grey never sits on LightGray dither. The rail's MENU `StateSelected` while open becomes moot.
 - `src/apps_local/sudokuplus/SudokuPlusFlow.h`, `SudokuPlusScreens.h` -- comments claim the panel is drawn over the grid with the board in view; update.
 - `host-tests/sudokuplus/test_sudokuplus.cpp` -- `testEnterAndSameDigit` (line 136 asserts the cell stays selected), `testNotes`, and later sequences calling `tapDigit` repeatedly on one cell must re-`tapCell` first.
 - `host-tests/ui/test_ui.cpp:8971` `testTheSudokuPlusMenuPanelIsModalAndFits` -- asserts the sheet is inside the 450px grid; change to: the sheet covers the page below the header, and there are no grid/pad/rail texts or actions. Note-drawing tests near 9084+ may pin black note colours.
