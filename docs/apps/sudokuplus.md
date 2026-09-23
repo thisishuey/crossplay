@@ -107,11 +107,11 @@ nobody ever saw.
   paper and LightGray it is 3px white outside a 2px black line, so it never
   merges with the board frame at the grid's edge; on a clue's DarkGray and on
   the focus it is 2px black outside a 3px white band.
-- A clash is a 3px diagonal slash through the cell, white on a dark ground and
-  black on a light one. It is not a frame because the selection is one, and not
-  a black ground because black belongs to the focus.
-- CHECK strikes a horizontal bar through a wrong numeral: a black core in a
-  white halo, so it reads over a white numeral on the focus as well as on paper.
+- A clash and a CHECK mark are one stroke in two directions: a 3px black
+  diagonal in a 2px white halo, which reads over a numeral of either colour. A
+  clash rises (/), a digit CHECK found wrong falls (\), and a wrong digit that
+  also clashes wears both. Neither is a frame, because the selection is one,
+  nor a black ground, because black belongs to the focus.
 
 ## The save
 

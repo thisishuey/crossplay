@@ -99,7 +99,7 @@ void cornerMarks(toybox::Screen& screen, const fui::Rect& box, const int16_t arm
 // black outside a 3px white band, the white half carrying it. On a light one
 // (paper, or LightGray) it is inverted: 3px white outside a 2px black line, so
 // it never merges with the board frame or a box rule at the edge of the grid.
-constexpr int16_t kCheckHalo = 2;
+constexpr int16_t kStrikeHalo = 2;
 constexpr int16_t kSelectBlack = 2;
 constexpr int16_t kSelectWhite = 3;
 void selectionFrame(toybox::Screen& screen, const fui::Rect& box, const bool light) {
@@ -112,14 +112,23 @@ void selectionFrame(toybox::Screen& screen, const fui::Rect& box, const bool lig
   frame(screen, inset(box, kSelectBlack), kSelectWhite, true);
 }
 
-// A clash: a 3px diagonal slash through the cell. Not a frame, because the
-// selection is a frame and a clashing cell is very often the selected one.
-// White on a dark ground (a given, or the focus), black on a light one.
-void clashSlash(toybox::Screen& screen, const fui::Rect& box, const bool dark) {
+// The two marks a digit can carry are one stroke in two directions: a 3px
+// black diagonal inside a 2px white halo, so it reads over a numeral of either
+// colour and on every ground. A clash rises (/); a digit CHECK found wrong
+// falls (\); a wrong digit that also clashes wears both, an X. Neither is a
+// frame, because the selection is one, nor a black ground, because black
+// belongs to the focus.
+enum class Stroke : uint8_t { Rising, Falling };
+void strike(toybox::Screen& screen, const fui::Rect& box, const Stroke stroke) {
   const int16_t pad = 6;
-  screen.target().line(fui::Point{static_cast<int16_t>(box.x + pad), static_cast<int16_t>(box.bottom() - 1 - pad)},
-                       fui::Point{static_cast<int16_t>(box.right() - 1 - pad), static_cast<int16_t>(box.y + pad)},
-                       static_cast<uint8_t>(toybox::kRule), ink(dark));
+  const int16_t left = static_cast<int16_t>(box.x + pad);
+  const int16_t right = static_cast<int16_t>(box.right() - 1 - pad);
+  const int16_t top = static_cast<int16_t>(box.y + pad);
+  const int16_t bottom = static_cast<int16_t>(box.bottom() - 1 - pad);
+  const fui::Point from = stroke == Stroke::Rising ? fui::Point{left, bottom} : fui::Point{left, top};
+  const fui::Point to = stroke == Stroke::Rising ? fui::Point{right, top} : fui::Point{right, bottom};
+  screen.target().line(from, to, static_cast<uint8_t>(toybox::kRule + 2 * kStrikeHalo), ink(true));
+  screen.target().line(from, to, static_cast<uint8_t>(toybox::kRule), ink(false));
 }
 
 // The header band with the offset rule under it, as the other games wear it.
@@ -213,25 +222,9 @@ void drawGrid(toybox::Screen& screen, const BoardModel& model) {
       digit.color = dark ? fui::Color::White : fui::Color::Black;
       screen.target().text(toybox::inkCentred(box, toybox::kDisplayCut), text, digit);
 
-      // A clash is a slash, never a black ground: black belongs to the focus,
-      // and a clash is most often exactly the digit you have focused.
-      if (sp::isClashing(game, cell)) clashSlash(screen, box, dark);
-
-      // CHECK's mark: a bar struck through the numeral. Only your digits can be
-      // wrong, and only until the next edit. A black core inside a white halo,
-      // on every ground: a single-colour bar vanished where it crossed a
-      // numeral of its own colour, which on a focused digit was most of it.
-      if (game.checkShown != 0 && sp::isWrong(game, cell)) {
-        const int16_t core = 34;
-        const int16_t y = static_cast<int16_t>(box.y + (box.height - toybox::kRule) / 2);
-        screen.target().fill(
-            fui::makeRect(static_cast<int16_t>(box.x + (box.width - core) / 2 - kCheckHalo),
-                          static_cast<int16_t>(y - kCheckHalo), static_cast<int16_t>(core + 2 * kCheckHalo),
-                          static_cast<int16_t>(toybox::kRule + 2 * kCheckHalo)),
-            ink(true));
-        screen.target().fill(
-            fui::makeRect(static_cast<int16_t>(box.x + (box.width - core) / 2), y, core, toybox::kRule), ink(false));
-      }
+      // A clash rises, and CHECK's mark falls; see `strike`.
+      if (sp::isClashing(game, cell)) strike(screen, box, Stroke::Rising);
+      if (game.checkShown != 0 && sp::isWrong(game, cell)) strike(screen, box, Stroke::Falling);
     } else {
       drawNotes(screen, box, sp::visibleNotes(game, cell), game.focus);
     }
@@ -517,7 +510,7 @@ void drawFace(toybox::Screen& screen, const fui::Rect& box, const char* face, co
       digit.align = fui::TextAlign::Center;
       digit.color = dark ? fui::Color::White : fui::Color::Black;
       screen.target().text(toybox::inkCentred(at, cut), text, digit);
-      if (clash) clashSlash(screen, at, dark);
+      if (clash) strike(screen, at, Stroke::Rising);
     }
     if (mark == 's') selectionFrame(screen, at, true);
   }

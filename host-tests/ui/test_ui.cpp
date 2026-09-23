@@ -9171,42 +9171,29 @@ void testTheSudokuPlusSelectionInvertsOnLightGrounds() {
   }
 }
 
-// CHECK's bar is a black core in a white halo, so it reads over a numeral of
-// either colour: on a focused wrong digit (white on black) and on paper alike.
-void testTheSudokuPlusCheckBarReadsOnEveryGround() {
-  const fui::DeviceContext ctx = device();
-  sudokuplusui::BoardModel base;
-  base.game = aSudokuPlusGame(sudoku::Level::Easy);
-  int cell = 0;
-  while (sudokuplus::isGiven(base.game, cell)) ++cell;
-  const uint8_t wrong = static_cast<uint8_t>(base.game.puzzle.solution[cell] % 9 + 1);
-  base.game.entry[cell] = wrong;
-  base.game.checkShown = 1;
-  const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
-  const uint8_t focuses[] = {wrong, 0};
-  for (const uint8_t focus : focuses) {
-    sudokuplusui::BoardModel model = base;
-    model.game.focus = focus;
-    Rendered out;
-    buildSudokuPlusBoard(out, model);
-    bool halo = false;
-    bool core = false;
-    for (size_t i = 0; i < out.target.fills.size(); ++i) {
-      const fui::Rect& r = out.target.fills[i];
-      const fui::Paint& paint = out.target.fillPaints[i];
-      if (paint.kind != fui::PaintKind::Solid || r.x <= box.x || r.right() >= box.right()) continue;
-      if (r.y <= box.y || r.bottom() >= box.bottom()) continue;
-      if (paint.color == fui::Color::White && r.width == 38 && r.height == toybox::kRule + 4) halo = true;
-      if (paint.color == fui::Color::Black && r.width == 34 && r.height == toybox::kRule && halo) core = true;
+// A haloed stroke inside `box`: a 3px black core over a 7px white halo on the
+// same segment, rising (/) or falling (\).
+bool sudokuPlusStrokeIn(const Rendered& out, const fui::Rect& box, const bool rising) {
+  auto inside = [&box](const fui::Point& p) {
+    return p.x >= box.x && p.x < box.right() && p.y >= box.y && p.y < box.bottom();
+  };
+  for (const auto& core : out.target.lines) {
+    if (core.width != toybox::kRule || core.color != fui::Color::Black) continue;
+    if (!inside(core.a) || !inside(core.b) || core.a.x >= core.b.x) continue;
+    if ((core.b.y < core.a.y) != rising) continue;
+    for (const auto& halo : out.target.lines) {
+      if (halo.width == toybox::kRule + 4 && halo.color == fui::Color::White && halo.a.x == core.a.x &&
+          halo.a.y == core.a.y && halo.b.x == core.b.x && halo.b.y == core.b.y) {
+        return true;
+      }
     }
-    CHECK(halo);
-    CHECK(core);
   }
+  return false;
 }
 
-// A clash is a slash, never a frame, so it cannot be mistaken for the
-// selection -- white on a dark clue, black on paper.
-void testTheSudokuPlusClashIsASlash() {
+// A clash rises and CHECK's mark falls, both black in a white halo, on a dark
+// clue and on paper alike; a wrong digit that also clashes wears both.
+void testTheSudokuPlusClashAndCheckAreOneStroke() {
   const fui::DeviceContext ctx = device();
   sudokuplusui::BoardModel model;
   model.game = aSudokuPlusGame(sudoku::Level::Easy);
@@ -9215,21 +9202,23 @@ void testTheSudokuPlusClashIsASlash() {
   int peer = 0;
   while (sudokuplus::isGiven(model.game, peer) || !sudoku::arePeers(peer, clue)) ++peer;
   model.game.entry[peer] = model.game.puzzle.given[clue];
+  model.game.checkShown = 1;
+  const uint8_t focuses[] = {model.game.puzzle.given[clue], 0};
+  for (const uint8_t focus : focuses) {
+    model.game.focus = focus;
+    Rendered out;
+    buildSudokuPlusBoard(out, model);
+    const fui::Rect peerBox = sudokuplusui::cellRect(ctx, peer);
+    const fui::Rect clueBox = sudokuplusui::cellRect(ctx, clue);
+    CHECK(sudokuPlusStrokeIn(out, clueBox, true));
+    CHECK(!sudokuPlusStrokeIn(out, clueBox, false));  // a clue is never wrong
+    CHECK(sudokuPlusStrokeIn(out, peerBox, true));
+    CHECK(sudokuPlusStrokeIn(out, peerBox, false));  // it clashes AND is wrong
+  }
+  model.game.checkShown = 0;
   Rendered out;
   buildSudokuPlusBoard(out, model);
-  auto slashIn = [&out](const fui::Rect& box, const fui::Color color) {
-    for (const auto& seg : out.target.lines) {
-      if (seg.width != toybox::kRule || seg.color != color) continue;
-      if (seg.a.x >= box.x && seg.a.x < box.right() && seg.b.x >= box.x && seg.b.x < box.right() && seg.a.y >= box.y &&
-          seg.a.y < box.bottom() && seg.b.y >= box.y && seg.b.y < box.bottom() && seg.a.x != seg.b.x &&
-          seg.a.y != seg.b.y) {
-        return true;
-      }
-    }
-    return false;
-  };
-  CHECK(slashIn(sudokuplusui::cellRect(ctx, peer), fui::Color::Black));
-  CHECK(slashIn(sudokuplusui::cellRect(ctx, clue), fui::Color::White));
+  CHECK(!sudokuPlusStrokeIn(out, sudokuplusui::cellRect(ctx, peer), false));
 }
 
 // The header's clock across the hour, where its format changes.
@@ -14403,8 +14392,7 @@ int main() {
   testTheSudokuPlusHeaderCarriesTheClockOrTheAnswer();
   testTheSudokuPlusGroundsReadInOrder();
   testTheSudokuPlusSelectionInvertsOnLightGrounds();
-  testTheSudokuPlusClashIsASlash();
-  testTheSudokuPlusCheckBarReadsOnEveryGround();
+  testTheSudokuPlusClashAndCheckAreOneStroke();
   testTheSudokuPlusHeaderClockCrossesTheHour();
   testTheSudokuPlusPadSaysFocusAndRemaining();
   testTheSudokuPlusFocusedNoteIsAChip();
