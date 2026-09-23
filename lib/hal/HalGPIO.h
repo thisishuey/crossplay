@@ -86,6 +86,7 @@ class HalGPIO {
   // Capacitive Home key reported by the touch controller (X4 Pro). The tap
   // event fires on release and excludes a long hold.
   bool hasHomeKey() const;
+  bool wasHomeKeyPressed() const;
   bool wasHomeKeyTapped() const;
   bool wasHomeKeyLongPressed() const;
   bool wasTouchTap(float& nx, float& ny) const;
@@ -125,7 +126,7 @@ class HalGPIO {
   // Returns true once per edge (plug or unplug) since the last update()
   bool wasUsbStateChanged() const;
 
-  enum class WakeupReason { PowerButton, AfterFlash, AfterUSBPower, Other };
+  enum class WakeupReason { PowerButton, Timer, AfterFlash, AfterUSBPower, Other };
 
   WakeupReason getWakeupReason() const;
 

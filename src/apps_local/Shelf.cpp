@@ -14,6 +14,7 @@
 #include "ShelfState.h"
 #include "activities/browser/OpdsBookBrowserActivity.h"
 #include "battleship/BattleshipActivity.h"
+#include "calculator/CalculatorActivity.h"
 #include "checkers/CheckersActivity.h"
 #include "chess/ChessActivity.h"
 #include "connectfour/ConnectFourActivity.h"
@@ -22,6 +23,7 @@
 #include "forehead/ForeheadActivity.h"
 #include "go/GoActivity.h"
 #include "hackernews/HackerNewsActivity.h"
+#include "hearts/HeartsActivity.h"
 #include "hex/HexActivity.h"
 #include "insider/InsiderActivity.h"
 #include "instapaper/InstapaperActivity.h"
@@ -29,6 +31,7 @@
 #include "knucklebones/KnucklebonesActivity.h"
 #include "minesweeper/MinesweeperActivity.h"
 #include "murdle/MurdleActivity.h"
+#include "notes/NotesActivity.h"
 #include "picross/PicrossActivity.h"
 #include "player/PlayerActivity.h"
 #include "seasalt/SeaSaltActivity.h"
@@ -54,6 +57,7 @@ constexpr shelf::Item kGames[] = {
     {"BATTLESHIP", &icon_battleship_32, &BattleshipActivity::create},
     {"CONNECTIONS", &icon_connections_32, &ConnectionsActivity::create},
     {"SOLITAIRE", &icon_solitaire_32, &SolitaireActivity::create},
+    {"HEARTS", &icon_hearts_32, &HeartsActivity::create},
     {"D&DIAGRAMS", &icon_dungeon_32, &DungeonActivity::create},
     {"INSIDER", &icon_insider_32, &InsiderActivity::create},
     {"JAIPUR", &icon_jaipur_32, &JaipurActivity::create},
@@ -81,6 +85,10 @@ constexpr shelf::Item kApps[] = {
     {"INSTAPAPER", &icon_instapaper_32, &InstapaperActivity::create},
     {"WALLPAPERS", &icon_wallpapers_32, &WallpapersActivity::create},
     {"WIKIPEDIA", &icon_wikipedia_32, &WikipediaActivity::create},
+    {"CALCULATOR", &icon_calculator_32, &CalculatorActivity::create},
+    // Card #516. The icon is the Lucide list mark borrowed from Murdle while
+    // the screens are being chosen; a Notes mark comes with the real app.
+    {"NOTES", &icon_murdle_face_clues_32, &NotesActivity::create},
 };
 
 // The two rows Home grows, in reading order. Titles are Title Case because

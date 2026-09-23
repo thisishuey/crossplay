@@ -289,6 +289,19 @@ if [ "$_committed" = "1" ]; then
   fi
   echo "  your working tree is untouched, and its uncommitted work is not in this build"
   git worktree add --quiet --detach "$TRIAL" HEAD || die
+  # THE COMMIT THIS RUN IS ABOUT, pinned here and not re-read later.
+  #
+  # The handover directory below is named after it, and ship.sh proves the
+  # images it publishes belong to the commit it tags by comparing that name
+  # against HEAD. Resolving HEAD at the END of the run instead -- after the
+  # host suites and two ESP32 builds, fifteen minutes later -- names the
+  # directory for whatever the branch has moved to since, while it holds the
+  # binaries of what it started with. Both of ship.sh's probes then pass and
+  # the wrong firmware ships under the right tag.
+  #
+  # Not hypothetical: two commits landed in this worktree during one such run
+  # on 2026-09-21. The detached clone cannot move, so it is the honest source.
+  TRIAL_SHA="$(git -C "$TRIAL" rev-parse HEAD)"
   # Clean up even when this run is interrupted. A killed --committed used to
   # leave ~600MB registered in TMPDIR until the same tree ran it again, and
   # long builds get killed on purpose here, so that is the normal case rather
@@ -383,7 +396,49 @@ if [ "$_committed" = "1" ]; then
   # bridge, whose breakage costs a developer and never a user.
   export CHECK_BUILD_RELEASE_ENVS=1
   (cd "$TRIAL" && ./scripts_local/check.sh "${1:-}")
-  exit $?
+  _committed_rc=$?
+
+  # HAND THE RELEASE IMAGES OUT BEFORE THE TRAP DELETES THEM.
+  #
+  # The images this mode builds are the ones that ship, and until 2026-09-21
+  # nothing outside this function could ever see them: they are written into
+  # $TRIAL/.pio/build, and the trap above removes $TRIAL on EXIT. That was
+  # invisible while GitHub rebuilt everything at tag time, and became the
+  # whole problem the moment scripts_local/ship.sh started publishing what
+  # the gate produced. Its first version read $REPO/.pio/build, which on a
+  # normal tree does not exist at all -- and on a tree where somebody had run
+  # `check.sh --flash gh_release_x4pro` held a PRE-BUMP image that would have
+  # published cleanly under the new tag. That is exactly the OTA failure the
+  # bump-before-build ordering exists to prevent, reached by another door.
+  #
+  # Opt-in, because copying ~14MB on every --committed run is a cost only the
+  # publisher needs to pay. Only on a green run: there is no such thing as a
+  # shippable image from a gate that did not pass.
+  if [ "$_committed_rc" = 0 ] && [ -n "${CHECK_KEEP_RELEASE_IMAGES:-}" ]; then
+    # TRIAL_SHA, not a fresh `git rev-parse HEAD`: see where it is set.
+    _out="$REPO/.pio/ship/$TRIAL_SHA"
+    rm -rf "$REPO/.pio/ship"
+    mkdir -p "$_out"
+    _kept=0
+    for _env in gh_release_x4pro gh_release_sticky; do
+      if [ -d "$TRIAL/.pio/build/$_env" ]; then
+        mkdir -p "$_out/$_env"
+        for _f in firmware.bin firmware.elf partitions.bin bootloader.bin; do
+          cp "$TRIAL/.pio/build/$_env/$_f" "$_out/$_env/$_f" 2>/dev/null && _kept=$((_kept + 1))
+        done
+      fi
+    done
+    # Named against the COMMIT, so a consumer can prove the images it found
+    # belong to the commit it means to publish rather than to whatever ran
+    # here last. Eight files or the directory is not a release.
+    if [ "$_kept" = 8 ]; then
+      echo "CHECKSH-IMAGES: $_out"
+    else
+      rm -rf "$REPO/.pio/ship"
+      echo "CHECKSH-IMAGES: none ($_kept of 8 files; the device builds were skipped or an env is missing)"
+    fi
+  fi
+  exit $_committed_rc
 fi
 
 # The link suite is real UDP on real loopback, and its port range IS its
@@ -746,7 +801,16 @@ for gcc_dir in host-tests/*/; do
   printf '%s\n' "$gcc_body" | grep -q -- '-Werror' || continue
   # An app source is src/ or lib/ by path, or through the variables the
   # suites use for them ($LIB, $SRC) and the SDK's own sources ($SDK).
-  printf '%s\n' "$gcc_body" | grep -qE '(^|[ "])((\.\./\.\./|\$ROOT/|\$REPO/)?(src|lib)/|\$(LIB|SRC|SDK)/)' || continue
+  #
+  # The separator class includes '=' and the variables need no trailing slash,
+  # and both of those were missing. host-tests/calculator assigns
+  # `SRC=../../src/apps_local/calculator` at the start of a line and compiles
+  # with `-I$SRC`: an app source under -Werror, honouring CXX, and this detector
+  # classified it as neither. It skipped GCC entirely and went red on CI with a
+  # -Wformat-truncation clang does not emit, after a local gate that printed
+  # "gcc ok (40 suite(s))". A detector that silently drops a suite reports the
+  # same way as one that has nothing to drop.
+  printf '%s\n' "$gcc_body" | grep -qE '(^|[ "=])((\.\./\.\./|\$ROOT/|\$REPO/)?(src|lib)/|\$\{?(LIB|SRC|SDK)\}?/?)' || continue
   if grep -q 'CXX' "$gcc_run"; then
     gcc_suites="$gcc_suites $(basename "$gcc_dir")"
   else
@@ -933,11 +997,12 @@ fi
 # and the offsets are picked apart from each other AND from the link suite,
 # which owns LINKPLAY_BASE_PORT+0..7 (LinkRadio.cpp, kSlots). readbridge takes
 # 8..11 because its harness derives a fake-service port from the base; study
-# takes 12. Sharing an offset would only bite when two trees gate at once,
-# which is exactly when nobody is looking.
+# takes 12; fridgebridge takes 13. Sharing an offset would only bite when two
+# trees gate at once, which is exactly when nobody is looking.
 for entry in \
   "server/study-bridge:bridge:12:tests/test_engine.py tests/test_api.py tests/test_window.py tests/test_events.py tests/test_pages.py" \
-  "server/read-bridge:readbridge:8:tests/test_oauth.py tests/test_article.py tests/test_listing.py tests/test_window.py tests/test_lockout.py tests/test_engine.py tests/test_api.py tests/test_events.py tests/test_pages.py"
+  "server/read-bridge:readbridge:8:tests/test_oauth.py tests/test_article.py tests/test_listing.py tests/test_window.py tests/test_lockout.py tests/test_engine.py tests/test_api.py tests/test_events.py tests/test_pages.py" \
+  "server/fridge-bridge:fridgebridge:13:tests/test_events.py tests/test_live_events.py"
 do
   BRIDGE_DIR="$REPO/${entry%%:*}"
   rest="${entry#*:}"

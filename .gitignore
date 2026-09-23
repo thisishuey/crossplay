@@ -2,6 +2,7 @@
 .idea
 .DS_Store
 .vscode
+.zed
 open-x4-sdk
 fs_
 fs_*/
@@ -105,3 +106,9 @@ site/wikipedia/mock/shards/
 # The shared config lives in _bmad/config.toml and IS committed; this one is
 # personal and the installer rewrites it on every run.
 _bmad/config.user.toml
+
+# scripts_local/ship.sh assembles the release here. Not committed, and
+# ignored so a finished run does not leave the tree dirty -- which would
+# make the NEXT ship.sh die at its own preflight until somebody cleared it.
+dist/
+.pio/

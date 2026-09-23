@@ -69,6 +69,13 @@ def generated(path):
 UPSTREAM_TREES = ("src/activities/", "src/components/", "src/network/", "src/util/")
 
 
+# The trees upstream owns, from the worker contract: the reader, the keyboard and
+# settings live in src/activities, the shared widgets in src/components, and lib/
+# is upstream's except for the directories this fork added. Ours is
+# src/apps_local plus fork additions upstream lacks.
+UPSTREAM_TREES = ("src/activities/", "src/components/", "src/network/", "src/util/")
+
+
 def upstream_owns(path):
     """Did upstream write this file?
 
