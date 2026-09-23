@@ -21,6 +21,10 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
+### 1.14.2-fork1790200140
+
+- SUDOKU+ lets go of a cell once you write a digit or a note, opens its MENU as a full page that no longer leaves ghosts on the board, and draws pencil notes in grey with the focused digit's note in black.
+
 ### 1.14.1-fork1790145182
 
 - SUDOKU+, a cell-first Sudoku next to the original, with pencil notes as dots, row, column and box shading, and a MENU for hints and check.
