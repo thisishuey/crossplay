@@ -30,6 +30,7 @@ context:
   - CLOSE.
   - The toggles default to ON and persist in the save.
 - The header shows the elapsed time, repainted at most once a minute.
+- (Added after smoke testing) Pencil marks are drawn as hollow dots in their digit's place (a solid square for the focused digit) by default; a MENU row, NOTES AS: DOTS / DIGITS, switches back to numerals. It persists in the save and survives a new puzzle.
 - (Renegotiated after smoke testing) SHADE PEERS shades the SELECTED cell's row, column and box, not the peers of every copy of the focused digit. Clues and focused digits keep their own grounds; with nothing selected, nothing is shaded.
 
 ## Boundaries & Constraints

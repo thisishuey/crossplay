@@ -9312,6 +9312,66 @@ void testTheSudokuPlusPadSaysFocusAndRemaining() {
 }
 
 // A pencilled mark of the focused digit is knocked out of a black chip.
+// NOTES AS: DOTS, the default. A mark is a hollow dot in its digit's place,
+// the focused digit's mark a solid square, and no numeral is drawn at all.
+void testTheSudokuPlusNotesAreDotsByDefault() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel model;
+  model.game = aSudokuPlusGame(sudoku::Level::Easy);
+  CHECK(model.game.noteShapes == 1);
+  int cell = 0;
+  while (sudokuplus::valueAt(model.game, cell) != 0) ++cell;
+  const sudoku::Mask open = static_cast<sudoku::Mask>(sudoku::kAllDigits & ~sudokuplus::takenAround(model.game, cell));
+  const int focused = sudoku::lowestDigit(open);
+  int dots = 0;
+  for (int d = 1; d <= sudoku::kSize; ++d) {
+    if ((open & sudoku::bitFor(d)) != 0 && d != focused) ++dots;
+  }
+  model.game.note[cell] = open;
+  model.game.focus = static_cast<uint8_t>(focused);
+  Rendered out;
+  buildSudokuPlusBoard(out, model);
+  const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
+  auto inside = [&box](const fui::Rect& r) {
+    return r.x > box.x && r.right() < box.right() && r.y > box.y && r.bottom() < box.bottom();
+  };
+
+  int squares = 0;
+  int discs = 0;
+  for (size_t i = 0; i < out.target.fills.size(); ++i) {
+    const fui::Rect& r = out.target.fills[i];
+    const fui::Paint& paint = out.target.fillPaints[i];
+    if (paint.kind != fui::PaintKind::Solid || !inside(r) || r.width != 10 || r.height != 10) continue;
+    if (paint.color == fui::Color::Black) ++squares;
+    if (paint.color == fui::Color::White) ++discs;
+  }
+  int rings = 0;
+  for (const auto& stroke : out.target.strokes) {
+    if (inside(stroke.rect) && stroke.rect.width == 10 && stroke.width == 2) ++rings;
+  }
+  CHECK(squares == 1);
+  CHECK(discs == dots);
+  CHECK(rings == dots);
+  for (const auto& run : out.target.texts) {
+    if (run.style.font != toybox::kTileFont) continue;
+    const int16_t midY = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
+    CHECK(!(run.rect.x >= box.x && run.rect.right() <= box.right() && midY >= box.y && midY < box.bottom()));
+  }
+
+  // The dot for digit d sits in the d-th slot, phone order: 1 top-left.
+  const int16_t side = static_cast<int16_t>((box.width - 8) / 3);
+  for (int d = 1; d <= sudoku::kSize; ++d) {
+    if ((open & sudoku::bitFor(d)) == 0) continue;
+    const int16_t x = static_cast<int16_t>(box.x + 4 + ((d - 1) % 3) * side + (side - 10) / 2);
+    const int16_t y = static_cast<int16_t>(box.y + 4 + ((d - 1) / 3) * side + (side - 10) / 2);
+    bool placed = false;
+    for (const auto& r : out.target.fills) {
+      if (r.x == x && r.y == y && r.width == 10) placed = true;
+    }
+    CHECK(placed);
+  }
+}
+
 void testTheSudokuPlusFocusedNoteIsAChip() {
   const fui::DeviceContext ctx = device();
   sudokuplusui::BoardModel model;
@@ -9327,6 +9387,7 @@ void testTheSudokuPlusFocusedNoteIsAChip() {
   }
   model.game.note[cell] = static_cast<sudoku::Mask>(sudoku::bitFor(focused) | (other != 0 ? sudoku::bitFor(other) : 0));
   model.game.focus = static_cast<uint8_t>(focused);
+  model.game.noteShapes = 0;  // NOTES AS: DIGITS
   Rendered out;
   buildSudokuPlusBoard(out, model);
   const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
@@ -14395,6 +14456,7 @@ int main() {
   testTheSudokuPlusClashAndCheckAreOneStroke();
   testTheSudokuPlusHeaderClockCrossesTheHour();
   testTheSudokuPlusPadSaysFocusAndRemaining();
+  testTheSudokuPlusNotesAreDotsByDefault();
   testTheSudokuPlusFocusedNoteIsAChip();
   testEverySudokuPlusScreenStaysOnThePanel();
   testPicrossBoardSpendsFewInteractions();

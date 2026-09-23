@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <string>
 
 #include "SudokuPlusGame.h"
 #include "SudokuPlusSave.h"
@@ -512,6 +513,7 @@ void testStartGameKeepsThePreferences() {
   sp::Game game = aGame(sudoku::Level::Easy, 0x100Fu);
   game.showRemaining = 0;
   game.shadePeers = 0;
+  game.noteShapes = 0;
   game.notesMode = 1;
   game.focus = 3;
   game.selected = 10;
@@ -519,6 +521,7 @@ void testStartGameKeepsThePreferences() {
   sp::startGame(game, next);
   checkEq(game.showRemaining, 0, "SHOW REMAINING survives a new puzzle");
   checkEq(game.shadePeers, 0, "and so does SHADE PEERS");
+  checkEq(game.noteShapes, 0, "and so does NOTES AS");
   checkEq(game.notesMode, 0, "NOTES starts off");
   checkEq(game.selected, sp::kNoCell, "nothing selected");
   checkEq(game.focus, 0, "nothing focused");
@@ -526,6 +529,7 @@ void testStartGameKeepsThePreferences() {
   const sp::Game fresh{};
   checkEq(fresh.showRemaining, 1, "SHOW REMAINING defaults on");
   checkEq(fresh.shadePeers, 1, "SHADE PEERS defaults on");
+  checkEq(fresh.noteShapes, 1, "notes default to dots");
 }
 
 void testTheRecordOnlyTimesUnhintedSolves() {
@@ -652,7 +656,11 @@ void testEveryPanelRow() {
   checkEq(toggles.shadePeers, 0, "and turns it off");
   sp::applyPanelRow(toggles, sp::PanelRow::ShadePeers);
   checkEq(toggles.shadePeers, 1, "and back on");
-  check(sameBoard(game, toggles), "neither toggle writes the board");
+  check(sp::applyPanelRow(toggles, sp::PanelRow::NoteStyle), "NOTES AS keeps the panel open");
+  checkEq(toggles.noteShapes, 0, "and switches to digits");
+  sp::applyPanelRow(toggles, sp::PanelRow::NoteStyle);
+  checkEq(toggles.noteShapes, 1, "and back to dots");
+  check(sameBoard(game, toggles), "no toggle writes the board");
 
   sp::Game closed = game;
   check(!sp::applyPanelRow(closed, sp::PanelRow::Close), "CLOSE closes the panel");
@@ -742,6 +750,34 @@ void testTheSaveRoundTrips() {
     checkEq(again.game.showRemaining, bits & 1, "SHOW REMAINING round trips either way");
     checkEq(again.game.shadePeers, (bits >> 1) & 1, "SHADE PEERS round trips either way");
   }
+  for (int shapes = 0; shapes < 2; ++shapes) {
+    state.game.noteShapes = static_cast<uint8_t>(shapes);
+    sp::packState(state, buffer, sizeof(buffer));
+    sp::SaveState again;
+    check(sp::unpackState(buffer, again), "a version 2 save loads");
+    checkEq(again.game.noteShapes, shapes, "NOTES AS round trips either way");
+  }
+
+  // A version 1 file, written before NOTES AS existed: eighteen header
+  // integers, and it loads with the default of dots.
+  state.game.noteShapes = 0;
+  const int written = sp::packState(state, buffer, sizeof(buffer));
+  check(written > 0 && buffer[0] == '2', "saves are written as version 2");
+  std::string legacy(buffer);
+  legacy[0] = '1';
+  const size_t eol = legacy.find('\n');
+  const size_t lastSpace = legacy.rfind(' ', eol);
+  legacy.erase(lastSpace, eol - lastSpace);
+  sp::SaveState old;
+  check(sp::unpackState(legacy.c_str(), old), "a version 1 save still loads");
+  checkEq(old.game.noteShapes, 1, "with notes as dots");
+  checkEq(old.record.hintsTaken, state.record.hintsTaken, "and the header read in the right places");
+  checkEq(static_cast<int>(old.game.puzzle.given[0]), static_cast<int>(state.game.puzzle.given[0]),
+          "and the board after it");
+  std::string future(buffer);
+  future[0] = '3';
+  sp::SaveState unknown;
+  check(!sp::unpackState(future.c_str(), unknown), "an unknown version is refused");
 }
 
 void testABrokenSaveChangesNothing() {

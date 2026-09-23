@@ -32,7 +32,14 @@ against SUDOKU's `sudoku.sav`), not a record.
 
 **Focus is how you read the board.** Every copy of the focused digit is
 inverted, the pad key for it gets a heavy frame, and a pencilled mark of it is
-knocked out of a black chip.
+filled in: a solid square among the dots, or a numeral knocked out of a black
+chip.
+
+**Notes are dots by default.** A pencil mark is a small hollow dot in its
+digit's place in the cell, which is its place on the pad: 1 top-left, 9
+bottom-right. The numerals are still there as NOTES AS: DIGITS in the MENU, but
+at note size they are hard to read on this panel, and a dot's position carries
+the same fact.
 
 **SHADE PEERS lights the selected cell's row, column and box** in LightGray:
 the three units the next digit has to agree with. Clues keep their DarkGray and
@@ -65,11 +72,13 @@ and the rail answers nothing; Back or CLOSE takes it down.
 | CHECK               | Strikes your digits that disagree with the answer, or says ALL CORRECT.                |
 | SHOW REMAINING      | Toggle: a small count in each pad key's corner of how many are still to place.         |
 | SHADE PEERS         | Toggle: the LightGray shading described above.                                         |
+| NOTES AS            | Toggle: pencil marks as DOTS (the default) or DIGITS.                                  |
 | CLOSE               | Takes the panel down.                                                                  |
 
 The three questions close the panel, because each answer is on the board. The
-two toggles leave it open, so the row itself shows the new state. Both toggles
-default ON, persist in the save and survive starting a new puzzle; NOTES
+three toggles leave it open, so the row itself shows the new state. They
+persist in the save and survive starting a new puzzle (SHOW REMAINING and SHADE
+PEERS default ON, NOTES AS defaults to DOTS); NOTES
 persists in the save but a new puzzle starts with it off.
 
 HINT, CHECK's marks and ALL CORRECT all last **until the next edit** -- a digit,
@@ -116,8 +125,9 @@ nobody ever saw.
 ## The save
 
 `SudokuPlusSave.h` packs and unpacks the file, freestanding, so the round trip
-is host-tested. It is SUDOKU's text format with NOTES and the two toggles added
-to the header. The answer is re-derived from the clues on load; the selection,
+is host-tested. It is SUDOKU's text format with NOTES and the three toggles
+added to the header. Version 2 added NOTES AS at the end of the header; a
+version 1 file still loads, with notes as dots. The answer is re-derived from the clues on load; the selection,
 the focus, a hint and CHECK's marks are never saved, so a reopened board has
 nothing selected. Nor is the undo history: it lives only for as long as the app
 is open, so UNDO on a reopened board has nothing to give back.

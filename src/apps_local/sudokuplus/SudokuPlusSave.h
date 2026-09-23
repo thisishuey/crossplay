@@ -7,7 +7,7 @@
 // The format is SUDOKU's, with the three flags this game adds in the header:
 //
 //   version level elapsedMs hintsUsed notes showRemaining shadePeers solved
-//   hasGame  solved[4]  bestMs[4]  hintsTaken
+//   hasGame  solved[4]  bestMs[4]  hintsTaken  noteShapes (version 2 on)
 //   81 clue digits
 //   81 entry digits
 //   81 three-digit hex note masks
@@ -29,8 +29,10 @@ namespace sudokuplus {
 // engine but never a save or a record.
 constexpr char kStatePath[] = "/.crosspoint/sudokuplus.sav";
 
-constexpr int kStateVersion = 1;
-// Eighteen small integers, then 81 + 81 digits and 81 three-digit hex masks.
+// Version 2 appended noteShapes to the header. A version 1 file still loads,
+// with the default: dots.
+constexpr int kStateVersion = 2;
+// Nineteen small integers, then 81 + 81 digits and 81 three-digit hex masks.
 constexpr int kStateBytes = 768;
 
 struct SaveState {
@@ -58,7 +60,8 @@ inline int packState(const SaveState& state, char* out, const int size) {
                           static_cast<unsigned long>(record.bestMs[i]));
   }
   if (used > 0 && used < size) {
-    used += std::snprintf(out + used, static_cast<size_t>(size - used), " %d\n", record.hintsTaken);
+    used += std::snprintf(out + used, static_cast<size_t>(size - used), " %d %d\n", record.hintsTaken,
+                          game.noteShapes != 0 ? 1 : 0);
   }
   // Three runs and three newlines, plus the terminator.
   if (used <= 0 || used + 2 * kCells + 3 * kCells + 4 > size) return -1;
@@ -85,17 +88,27 @@ inline int packState(const SaveState& state, char* out, const int size) {
 // so a truncated or corrupt file leaves `out` exactly as it was and returns
 // false: a fresh app rather than half a puzzle.
 inline bool unpackState(const char* text, SaveState& out) {
-  constexpr int kHeaderCount = 18;
+  constexpr int kHeaderCount = 19;
   long header[kHeaderCount] = {};
   const char* cursor = text;
-  for (int i = 0; i < kHeaderCount; ++i) {
+  // The version comes first and says how long the header is.
+  int headerCount = 1;
+  for (int i = 0; i < headerCount; ++i) {
     char* next = nullptr;
     const long value = std::strtol(cursor, &next, 10);
     if (next == cursor) return false;
     header[i] = value;
     cursor = next;
+    if (i == 0) {
+      if (value == 1) {
+        headerCount = 18;
+      } else if (value == kStateVersion) {
+        headerCount = kHeaderCount;
+      } else {
+        return false;
+      }
+    }
   }
-  if (header[0] != kStateVersion) return false;
 
   auto takeRun = [&cursor](char* run, const int length) {
     while (*cursor == ' ' || *cursor == '\n' || *cursor == '\r') ++cursor;
@@ -128,6 +141,7 @@ inline bool unpackState(const char* text, SaveState& out) {
   for (int i = 0; i < kLevelCount; ++i) state.record.solved[i] = static_cast<uint16_t>(header[at++]);
   for (int i = 0; i < kLevelCount; ++i) state.record.bestMs[i] = static_cast<uint32_t>(header[at++]);
   state.record.hintsTaken = static_cast<uint16_t>(header[at++]);
+  game.noteShapes = headerCount > at ? (header[at++] != 0 ? 1 : 0) : 1;
 
   if (state.hasGame) {
     Puzzle& puzzle = game.puzzle;

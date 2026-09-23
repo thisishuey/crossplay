@@ -44,7 +44,7 @@ constexpr bool leavesApp(const Screen screen) { return screen == Screen::Menu; }
 // The MENU panel's rows, top to bottom. Its whole vocabulary: the three things
 // you might ask of a board, the two ways it can be drawn, and the door. What
 // each one does is sudokuplus::applyPanelRow (SudokuPlusGame.h).
-enum class PanelRow : int { Hint = 0, FillNotes, Check, ShowRemaining, ShadePeers, Close, Count };
+enum class PanelRow : int { Hint = 0, FillNotes, Check, ShowRemaining, ShadePeers, NoteStyle, Close, Count };
 
 // What Back does, all of it, including the panel the screen table cannot see.
 enum class BackAction : uint8_t {

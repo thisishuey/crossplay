@@ -41,10 +41,11 @@ static_assert(kRailGap >= toybox::kGutter, "the pad needs air under the grid");
 static_assert(kRailRows * kRailRow + (kRailRows - 1) * kRailRowGap == kPadSide,
               "the rail is exactly as tall as the pad");
 
-// The MENU panel: six rows over the grid, inset from it by a gutter so the
-// board still frames it.
+// The MENU panel: seven rows over the grid, inset from it by a gutter so the
+// board still frames it. Seven of the standard 62px rows would run past the
+// grid, so the panel's rows are 54px -- still well over a fingertip.
 constexpr int kPanelRows = static_cast<int>(PanelRow::Count);
-constexpr int16_t kPanelRow = toybox::kRowHeight;
+constexpr int16_t kPanelRow = 54;
 constexpr int16_t kPanelRowGap = toybox::kGutter / 2;
 constexpr int16_t kPanelPad = toybox::kGutter;
 constexpr int16_t kPanelHeight =
@@ -100,6 +101,9 @@ void cornerMarks(toybox::Screen& screen, const fui::Rect& box, const int16_t arm
 // (paper, or LightGray) it is inverted: 3px white outside a 2px black line, so
 // it never merges with the board frame or a box rule at the edge of the grid.
 constexpr int16_t kStrikeHalo = 2;
+// A pencil mark drawn as a shape: a 10px dot with a 2px ring, or a 10px square.
+constexpr int16_t kNoteShape = 10;
+constexpr uint8_t kNoteRing = 2;
 constexpr int16_t kSelectBlack = 2;
 constexpr int16_t kSelectWhite = 3;
 void selectionFrame(toybox::Screen& screen, const fui::Rect& box, const bool light) {
@@ -160,7 +164,8 @@ void digitText(char* out, const int digit) {
 // The nine pencil marks, each where its digit sits on the pad: 1 top-left
 // through 9 bottom-right. The focused digit's mark is knocked out of a black
 // chip, so "where can the 6 go" is answered by the notes as well as the board.
-void drawNotes(toybox::Screen& screen, const fui::Rect& cell, const sk::Mask notes, const int focus) {
+void drawNotes(toybox::Screen& screen, const fui::Rect& cell, const sk::Mask notes, const int focus,
+               const bool shapes) {
   if (notes == 0) return;
   const int16_t pad = 4;
   const int16_t side = static_cast<int16_t>((cell.width - 2 * pad) / 3);
@@ -171,14 +176,27 @@ void drawNotes(toybox::Screen& screen, const fui::Rect& cell, const sk::Mask not
     const fui::Rect slot = fui::makeRect(static_cast<int16_t>(cell.x + pad + column * side),
                                          static_cast<int16_t>(cell.y + pad + row * side), side, side);
     const bool emphasised = digit == focus;
+    if (shapes) {
+      // A hollow dot where the digit would sit, or a solid square for the
+      // focused digit. The dot is knocked out of the ground first, so it
+      // reads the same on paper and on a shaded cell.
+      const fui::Rect mark = inset(slot, static_cast<int16_t>((side - kNoteShape) / 2));
+      if (emphasised) {
+        screen.target().fill(mark, fui::Paint::solid(fui::Color::Black));
+      } else {
+        screen.target().fill(mark, fui::Paint::solid(fui::Color::White), kNoteShape / 2);
+        screen.target().stroke(mark, fui::Paint::solid(fui::Color::Black), kNoteRing, kNoteShape / 2);
+      }
+      continue;
+    }
     if (emphasised) screen.target().fill(slot, fui::Paint::solid(fui::Color::Black));
-    fui::TextStyle mark;
-    mark.font = toybox::kTileFont;
-    mark.align = fui::TextAlign::Center;
-    mark.color = emphasised ? fui::Color::White : fui::Color::Black;
-    char text[2];
-    digitText(text, digit);
-    screen.target().text(toybox::inkCentred(slot, toybox::kTileCut), text, mark);
+    fui::TextStyle text;
+    text.font = toybox::kTileFont;
+    text.align = fui::TextAlign::Center;
+    text.color = emphasised ? fui::Color::White : fui::Color::Black;
+    char glyph[2];
+    digitText(glyph, digit);
+    screen.target().text(toybox::inkCentred(slot, toybox::kTileCut), glyph, text);
   }
 }
 
@@ -226,7 +244,7 @@ void drawGrid(toybox::Screen& screen, const BoardModel& model) {
       if (sp::isClashing(game, cell)) strike(screen, box, Stroke::Rising);
       if (game.checkShown != 0 && sp::isWrong(game, cell)) strike(screen, box, Stroke::Falling);
     } else {
-      drawNotes(screen, box, sp::visibleNotes(game, cell), game.focus);
+      drawNotes(screen, box, sp::visibleNotes(game, cell), game.focus, game.noteShapes != 0);
     }
   }
 
@@ -382,6 +400,9 @@ void drawPanel(toybox::Screen& screen, const BoardModel& model) {
         props.label = game.shadePeers != 0 ? "SHADE PEERS: ON" : "SHADE PEERS: OFF";
         props.state = game.shadePeers != 0 ? fui::StateSelected : fui::StateNormal;
         break;
+      case PanelRow::NoteStyle:
+        props.label = game.noteShapes != 0 ? "NOTES AS: DOTS" : "NOTES AS: DIGITS";
+        break;
       case PanelRow::Close:
         props.label = "CLOSE";
         break;
@@ -459,7 +480,7 @@ const Lesson kLessons[] = {
     {"THE RULE", "EVERY ROW, COLUMN AND BOX HOLDS 1 TO 9.", "NO DIGIT TWICE IN ANY OF THEM.", "123456789", nullptr, 0},
     {"WRITING", "TAP A CELL, THEN A DIGIT TO WRITE IT.", "SAME DIGIT CLEARS IT; SO DO ERASE AND UNDO.", "A-C-s---I",
      "A-C-5---I", 0},
-    {"NOTES", "TURN NOTES ON, THEN TAP DIGITS TO PENCIL.", "MENU CAN PENCIL EVERY CELL AT ONCE.", "A.C.s...I",
+    {"NOTES", "TURN NOTES ON, THEN TAP DIGITS TO PENCIL.", "EACH DOT SITS WHERE ITS DIGIT IS ON THE PAD.", "A.C.s...I",
      "A.C.p...I", 0},
     {"READING", "TAP A DIGIT TO LIGHT EVERY COPY OF IT.", "KEYS COUNT HOW MANY OF EACH ARE LEFT.", "A.C.....I",
      "a.C.....I", 0},
@@ -503,7 +524,7 @@ void drawFace(toybox::Screen& screen, const fui::Rect& box, const char* face, co
     if (clash) text[0] = static_cast<char>('0' + lessonDigit);
 
     if (mark == 'p') {
-      drawNotes(screen, at, static_cast<sk::Mask>(sk::bitFor(2) | sk::bitFor(6) | sk::bitFor(8)), 0);
+      drawNotes(screen, at, static_cast<sk::Mask>(sk::bitFor(2) | sk::bitFor(6) | sk::bitFor(8)), 0, true);
     } else if (text[0] != '\0') {
       fui::TextStyle digit;
       digit.font = font;

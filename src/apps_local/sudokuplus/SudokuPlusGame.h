@@ -93,6 +93,10 @@ struct Game {
   uint8_t notesMode = 0;
   uint8_t showRemaining = 1;
   uint8_t shadePeers = 1;
+  // How a pencil mark is drawn: a hollow dot whose place in the cell is its
+  // digit (1 top-left, 9 bottom-right, as on the pad), or the small numeral.
+  // Dots by default: a numeral at note size is hard to read on this panel.
+  uint8_t noteShapes = 1;
 
   // CHECK's marks, shown until the next edit.
   uint8_t checkShown = 0;
@@ -430,6 +434,9 @@ inline bool applyPanelRow(Game& game, const PanelRow row) {
     case PanelRow::ShadePeers:
       game.shadePeers = game.shadePeers != 0 ? 0 : 1;
       return true;
+    case PanelRow::NoteStyle:
+      game.noteShapes = game.noteShapes != 0 ? 0 : 1;
+      return true;
     case PanelRow::Close:
       return false;
     case PanelRow::Count:
@@ -465,10 +472,12 @@ inline bool canResume(const Game& game, const bool hasGame, const Level menuLeve
 inline void startGame(Game& game, const Puzzle& puzzle) {
   const uint8_t showRemaining = game.showRemaining;
   const uint8_t shadePeers = game.shadePeers;
+  const uint8_t noteShapes = game.noteShapes;
   game = Game{};
   game.puzzle = puzzle;
   game.showRemaining = showRemaining;
   game.shadePeers = shadePeers;
+  game.noteShapes = noteShapes;
 }
 
 struct Record {
