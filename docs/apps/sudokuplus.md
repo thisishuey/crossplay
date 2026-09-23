@@ -22,20 +22,20 @@ against SUDOKU's `sudoku.sav`), not a record.
 | ---------------------------------------- | -------------------------------------------------------------------------- |
 | Tap a cell                               | It is selected (a black-and-white frame). A digit in it focuses it.        |
 | Tap the selected cell                    | It is deselected.                                                          |
-| Tap a digit, a cell of yours selected    | The digit is written and the cell's notes clear. One undo step.            |
-| Tap the digit that cell already holds    | It is cleared.                                                             |
-| Tap a digit, NOTES on                    | That mark toggles in the cell's 3x3 mini-grid. On a filled cell, or for a digit a peer already holds, nothing: the mark could not be seen. |
+| Tap a digit, a cell of yours selected    | The digit is written, the cell's notes clear, and the cell is deselected. One undo step. |
+| Tap the digit that cell already holds    | It is cleared, and the cell is deselected.                                 |
+| Tap a digit, NOTES on                    | That mark toggles in the cell's 3x3 mini-grid and the cell is deselected. On a filled cell, or for a digit a peer already holds, nothing: the mark could not be seen, and the cell stays selected. |
 | Tap a digit, nothing or a clue selected  | The focus moves to that digit, or clears if it was already there.          |
-| ERASE                                    | The selected cell's digit and notes clear. Dimmed when nothing visible would clear. |
+| ERASE                                    | The selected cell's digit and notes clear, and the cell stays selected. Dimmed when nothing visible would clear, and right after a write, until the cell is tapped again. |
 | UNDO                                     | One cell back, or one whole FILL NOTES.                                    |
-| MENU                                     | The panel below, over the grid.                                            |
+| MENU                                     | The panel below, a full-page sheet in place of the board.                  |
 
 **Focus is how you read the board.** Every copy of the focused digit is
 inverted, the pad key for it gets a heavy frame, and a pencilled mark of it is
-filled in: a solid square among the dots, or a numeral knocked out of a black
-chip.
+drawn black where every other mark is grey: a solid black dot among the grey
+rings, or a black numeral among grey ones. No box, no chip.
 
-**Notes are dots by default.** A pencil mark is a small hollow dot in its
+**Notes are dots by default.** A pencil mark is a small grey ring in its
 digit's place in the cell, which is its place on the pad: 1 top-left, 9
 bottom-right. The numerals are still there as NOTES AS: DIGITS in the MENU, but
 at note size they are hard to read on this panel, and a dot's position carries
@@ -47,6 +47,12 @@ the focused digit its black; with nothing selected, nothing is shaded.
 
 Selection and focus are separate facts. Tapping an empty cell leaves the focus
 where it was, so you can walk the board with the 7s still lit.
+
+**A write lets go of the cell.** A digit, a note, or tapping the digit a cell
+already holds deselects it, so the next tap on the pad cannot land somewhere you have
+stopped looking. The focus stays where the write put it (the digit just
+written; a note leaves it alone). A refused note keeps the selection, so you
+can see where the tap went. HINT still selects its cell, ready for the answer.
 
 ## The rail
 
@@ -62,8 +68,13 @@ minute turns and at no other time.
 
 ## The MENU panel
 
-A framed sheet over the grid. While it is up the board beneath takes no taps
-and the rail answers nothing; Back or CLOSE takes it down.
+A framed sheet covering the whole page below the header. The board is not
+drawn under it -- no grid, pad or rail -- so its rows are the only things on
+screen and the only things a tap can reach; Back or CLOSE takes it down.
+Opening it and closing it, by any path, paint with a full refresh, because the
+sheet replaces a dense board wholesale and a fast refresh would leave one
+ghosting under the other. The toggles repaint fast, so browsing the panel
+stays quiet.
 
 | Row                 | Does                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------- |
@@ -112,6 +123,16 @@ nobody ever saw.
 - Everything else -- empty cells and your own digits -- is plain paper with a
   black numeral. No underline, no mark: your digits are simply the ones not on
   grey.
+- A pencil mark is DarkGray (the 50% dither: LightGray's 25% leaves a ring or
+  a note-sized numeral faint and broken on this panel), and the focused
+  digit's mark is solid black. A grey mark always sits on paper: a dot carries
+  its own paper disc, and on a shaded cell a grey numeral gets a patch of
+  paper knocked out under it, so grey never mixes into the LightGray ground.
+  The ring is a grey disc with a paper disc inside it, not a stroke, because a
+  stroke has no dithered ink on the device. Nor has text: a DarkGray text colour
+  falls back to solid black, so a grey numeral is drawn black and then greyed
+  by 1px paper lines along the odd anti-diagonals, which are exactly the pixels
+  the DarkGray dither leaves white (`greyOut` in `SudokuPlusScreens.cpp`).
 - The selection is a black frame and a white frame, inverted by the ground. On
   paper and LightGray it is 3px white outside a 2px black line, so it never
   merges with the board frame at the grid's edge; on a clue's DarkGray and on
@@ -135,10 +156,16 @@ is open, so UNDO on a reopened board has nothing to give back.
 ## Tests
 
 - `host-tests/sudokuplus/run.sh` -- every row of the interaction table above,
-  undo of a note, ERASE, FILL NOTES as one step (and never undone by halves when
-  the ring wraps), CHECK clearing on the next edit, HINT, the solved lock, and
-  the save round trip including a truncated file. Needs no SDK.
+  including deselect after a digit, a clear and a note, and a refused note (on
+  a filled cell, or for a digit a peer holds) keeping the selection; undo of a
+  note, ERASE, FILL NOTES as one step (and never undone by halves when the ring
+  wraps), CHECK clearing on the next edit, HINT, the solved lock, the
+  `PanelPaint` refresh rule as a whole session of paints (board, open, two
+  toggles, close, a grid tap, open, Back: only the panel going up or down
+  flashes), and the save round trip including a truncated file. Needs no SDK.
 - `host-tests/ui` -- the grid and pad hit tests are exact inverses of their
   rects, the rail is exactly as tall as the pad, the panel and every rail
-  control stay on the 480x800 panel inside 24 interactions, and the panel makes
-  the rail inert.
+  control stay on the 480x800 panel inside 24 interactions, the MENU sheet
+  covers the page below the header with no grid, pad or rail drawn under it
+  and a tap sweep of the whole page reaches nothing but its rows, and notes are
+  grey with the focused one plain black (no square, no chip).

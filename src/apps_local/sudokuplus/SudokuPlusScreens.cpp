@@ -41,17 +41,21 @@ static_assert(kRailGap >= toybox::kGutter, "the pad needs air under the grid");
 static_assert(kRailRows * kRailRow + (kRailRows - 1) * kRailRowGap == kPadSide,
               "the rail is exactly as tall as the pad");
 
-// The MENU panel: seven rows over the grid, inset from it by a gutter so the
-// board still frames it. Seven of the standard 62px rows would run past the
-// grid, so the panel's rows are 54px -- still well over a fingertip.
+// The MENU panel: a full-page sheet, the board's width, from the board's top
+// down to the page's bottom margin. The board is not drawn beneath it, so the
+// grid, the pad and the rail cannot sit there looking live while answering
+// nothing. Its seven rows share the sheet between them, so no band of it is
+// dead to a tap; whatever the division leaves over goes to the bottom padding.
 constexpr int kPanelRows = static_cast<int>(PanelRow::Count);
-constexpr int16_t kPanelRow = 54;
 constexpr int16_t kPanelRowGap = toybox::kGutter / 2;
 constexpr int16_t kPanelPad = toybox::kGutter;
-constexpr int16_t kPanelHeight =
-    static_cast<int16_t>(kPanelRows * kPanelRow + (kPanelRows - 1) * kPanelRowGap + 2 * kPanelPad);
-constexpr int16_t kPanelWidth = static_cast<int16_t>(kGridSide - 2 * toybox::kGutter);
-static_assert(kPanelHeight <= kGridSide, "the panel sits over the grid, not past it");
+constexpr int16_t kPanelHeight = static_cast<int16_t>(800 - toybox::kMargin - kBoardTop);
+constexpr int16_t kPanelWidth = kBoardOuter;
+constexpr int16_t kPanelRow =
+    static_cast<int16_t>((kPanelHeight - 2 * kPanelPad - (kPanelRows - 1) * kPanelRowGap) / kPanelRows);
+static_assert(kPanelRows * kPanelRow + (kPanelRows - 1) * kPanelRowGap + 2 * kPanelPad <= kPanelHeight,
+              "every panel row fits on the sheet");
+static_assert(kPanelRow >= toybox::kRowHeight, "a panel row is at least a standard list row");
 
 int16_t boardLeft(const fui::DeviceContext& device) { return static_cast<int16_t>((device.width - kBoardOuter) / 2); }
 
@@ -101,9 +105,12 @@ void cornerMarks(toybox::Screen& screen, const fui::Rect& box, const int16_t arm
 // (paper, or LightGray) it is inverted: 3px white outside a 2px black line, so
 // it never merges with the board frame or a box rule at the edge of the grid.
 constexpr int16_t kStrikeHalo = 2;
-// A pencil mark drawn as a shape: a 10px dot with a 2px ring, or a 10px square.
+// A pencil mark drawn as a shape: a 10px dot, a 2px grey ring or solid black.
 constexpr int16_t kNoteShape = 10;
 constexpr uint8_t kNoteRing = 2;
+// The paper under a grey note numeral on a shaded cell: the tile cut's widest
+// digit is 9px of ink, so a pixel of paper either side of it.
+constexpr int16_t kNotePatch = 11;
 constexpr int16_t kSelectBlack = 2;
 constexpr int16_t kSelectWhite = 3;
 void selectionFrame(toybox::Screen& screen, const fui::Rect& box, const bool light) {
@@ -161,14 +168,48 @@ void digitText(char* out, const int digit) {
   out[1] = '\0';
 }
 
+// Knocks every other pixel of `box` back to paper, in the checkerboard the
+// DarkGray dither leaves white, so black ink inside it reads as DarkGray.
+// That is how a grey note numeral is drawn: GfxRenderer has no dithered text,
+// and FreeInkUI falls back to solid black for a DarkGray text colour, so the
+// numeral goes down black and is greyed afterwards. One-pixel lines at exactly
+// 45 degrees hit exactly the pixels of one anti-diagonal (x + y constant), and
+// every odd one is the dither's white. Where text does dither, the pixels it
+// leaves white are these same ones, so this changes nothing.
+void greyOut(toybox::Screen& screen, const fui::Rect& box) {
+  const fui::Paint paper = fui::Paint::solid(fui::Color::White);
+  const int left = box.x;
+  const int top = box.y;
+  const int right = box.right() - 1;
+  const int bottom = box.bottom() - 1;
+  for (int sum = left + top; sum <= right + bottom; ++sum) {
+    if (sum % 2 == 0) continue;
+    const int from = sum - bottom > left ? sum - bottom : left;
+    const int to = sum - top < right ? sum - top : right;
+    if (from > to) continue;
+    screen.target().line(fui::Point{static_cast<int16_t>(from), static_cast<int16_t>(sum - from)},
+                         fui::Point{static_cast<int16_t>(to), static_cast<int16_t>(sum - to)}, 1, paper);
+  }
+}
+
 // The nine pencil marks, each where its digit sits on the pad: 1 top-left
-// through 9 bottom-right. The focused digit's mark is knocked out of a black
-// chip, so "where can the 6 go" is answered by the notes as well as the board.
-void drawNotes(toybox::Screen& screen, const fui::Rect& cell, const sk::Mask notes, const int focus,
-               const bool shapes) {
+// through 9 bottom-right. A mark is grey -- DarkGray, the 50% dither, because
+// LightGray's 25% leaves a 10px ring or a note-sized numeral faint and broken
+// on a 1-bit panel -- so the notes sit a step behind the digits. The focused
+// digit's mark is plain black instead, which is the whole emphasis: "where can
+// the 6 go" is answered by the notes as well as the board, with no box or chip
+// to read round.
+//
+// A grey mark always sits on paper. On a SHADE PEERS cell a dither laid over
+// the LightGray ground would mix into it, so the paper is knocked out first.
+// A dot carries its own paper disc; a numeral gets a patch of paper.
+void drawNotes(toybox::Screen& screen, const fui::Rect& cell, const sk::Mask notes, const int focus, const bool shapes,
+               const bool shaded) {
   if (notes == 0) return;
   const int16_t pad = 4;
   const int16_t side = static_cast<int16_t>((cell.width - 2 * pad) / 3);
+  const fui::Paint paper = fui::Paint::solid(fui::Color::White);
+  const fui::Paint grey = fui::Paint::dither(fui::Color::DarkGray);
   for (int digit = 1; digit <= sk::kSize; ++digit) {
     if (!(notes & sk::bitFor(digit))) continue;
     const int16_t column = static_cast<int16_t>((digit - 1) % 3);
@@ -177,26 +218,32 @@ void drawNotes(toybox::Screen& screen, const fui::Rect& cell, const sk::Mask not
                                          static_cast<int16_t>(cell.y + pad + row * side), side, side);
     const bool emphasised = digit == focus;
     if (shapes) {
-      // A hollow dot where the digit would sit, or a solid square for the
-      // focused digit. The dot is knocked out of the ground first, so it
-      // reads the same on paper and on a shaded cell.
+      // A round dot where the digit would sit: solid black for the focused
+      // digit, otherwise a grey ring on a paper disc. The ring is a grey disc
+      // with a paper one inside it rather than a stroke, because a stroke has
+      // no dithered ink on the device and would come out black.
       const fui::Rect mark = inset(slot, static_cast<int16_t>((side - kNoteShape) / 2));
       if (emphasised) {
-        screen.target().fill(mark, fui::Paint::solid(fui::Color::Black));
+        screen.target().fill(mark, fui::Paint::solid(fui::Color::Black), kNoteShape / 2);
       } else {
-        screen.target().fill(mark, fui::Paint::solid(fui::Color::White), kNoteShape / 2);
-        screen.target().stroke(mark, fui::Paint::solid(fui::Color::Black), kNoteRing, kNoteShape / 2);
+        screen.target().fill(mark, paper, kNoteShape / 2);
+        screen.target().fill(mark, grey, kNoteShape / 2);
+        screen.target().fill(inset(mark, kNoteRing), paper, kNoteShape / 2 - kNoteRing);
       }
       continue;
     }
-    if (emphasised) screen.target().fill(slot, fui::Paint::solid(fui::Color::Black));
+    // Paper just wider than the widest numeral's ink, the slot's full height.
+    const fui::Rect patch =
+        fui::makeRect(static_cast<int16_t>(slot.x + (side - kNotePatch) / 2), slot.y, kNotePatch, slot.height);
+    if (!emphasised && shaded) screen.target().fill(patch, paper);
     fui::TextStyle text;
     text.font = toybox::kTileFont;
     text.align = fui::TextAlign::Center;
-    text.color = emphasised ? fui::Color::White : fui::Color::Black;
+    text.color = emphasised ? fui::Color::Black : fui::Color::DarkGray;
     char glyph[2];
     digitText(glyph, digit);
     screen.target().text(toybox::inkCentred(slot, toybox::kTileCut), glyph, text);
+    if (!emphasised) greyOut(screen, patch);
   }
 }
 
@@ -244,7 +291,8 @@ void drawGrid(toybox::Screen& screen, const BoardModel& model) {
       if (sp::isClashing(game, cell)) strike(screen, box, Stroke::Rising);
       if (game.checkShown != 0 && sp::isWrong(game, cell)) strike(screen, box, Stroke::Falling);
     } else {
-      drawNotes(screen, box, sp::visibleNotes(game, cell), game.focus, game.noteShapes != 0);
+      drawNotes(screen, box, sp::visibleNotes(game, cell), game.focus, game.noteShapes != 0,
+                sp::isShadedPeer(game, cell));
     }
   }
 
@@ -309,10 +357,8 @@ void drawRail(toybox::Screen& screen, const BoardModel& model) {
   const fui::DeviceContext& device = screen.device();
   const sp::Game& game = model.game;
   const bool solved = game.solvedFlag != 0;
-  // With the panel up, the rail is drawn but answers nothing: the panel is
-  // modal, and a rail that still worked under it would be a second way to act
-  // on a board the player cannot see all of.
-  const bool live = !model.panelOpen && !model.generating;
+  // Never drawn under the panel (see buildBoard), so only a carve silences it.
+  const bool live = !model.generating;
   auto act = [live](const fui::ActionId action, const bool can) {
     return live && can ? action : static_cast<fui::ActionId>(fui::NO_ACTION);
   };
@@ -354,13 +400,12 @@ void drawRail(toybox::Screen& screen, const BoardModel& model) {
   menu.label = "MENU";
   menu.action = act(ActionOpenPanel, true);
   menu.styles = model.generating ? toybox::disabledStepperStyles() : toybox::rowStyles();
-  // Shown as held down while the panel it opened is up.
-  menu.state = model.panelOpen ? fui::StateSelected : fui::StateNormal;
   screen.button(menu, railRowRect(device, 3));
 }
 
-// The MENU panel. A framed white sheet over the grid, holding one row per
-// thing it offers. The toggles are drawn the way NOTES is: inverted while on.
+// The MENU panel. A framed white sheet covering the page below the header,
+// holding one row per thing it offers. The toggles are drawn the way NOTES
+// is: inverted while on.
 void drawPanel(toybox::Screen& screen, const BoardModel& model) {
   const fui::DeviceContext& device = screen.device();
   const sp::Game& game = model.game;
@@ -478,9 +523,9 @@ struct Lesson {
 // one box before the player has done anything.
 const Lesson kLessons[] = {
     {"THE RULE", "EVERY ROW, COLUMN AND BOX HOLDS 1 TO 9.", "NO DIGIT TWICE IN ANY OF THEM.", "123456789", nullptr, 0},
-    {"WRITING", "TAP A CELL, THEN A DIGIT TO WRITE IT.", "SAME DIGIT CLEARS IT; SO DO ERASE AND UNDO.", "A-C-s---I",
-     "A-C-5---I", 0},
-    {"NOTES", "TURN NOTES ON, THEN TAP DIGITS TO PENCIL.", "EACH DOT SITS WHERE ITS DIGIT IS ON THE PAD.", "A.C.s...I",
+    {"WRITING", "TAP A CELL, THEN A DIGIT TO WRITE IT.", "TAP IT AGAIN, THEN THE SAME DIGIT, TO CLEAR.", "A-C-s---I",
+     "A.C.5...I", 0},
+    {"NOTES", "NOTES ON: A CELL, THEN A DIGIT, PER MARK.", "EACH DOT SITS WHERE ITS DIGIT IS ON THE PAD.", "A.C.s...I",
      "A.C.p...I", 0},
     {"READING", "TAP A DIGIT TO LIGHT EVERY COPY OF IT.", "KEYS COUNT HOW MANY OF EACH ARE LEFT.", "A.C.....I",
      "a.C.....I", 0},
@@ -524,7 +569,7 @@ void drawFace(toybox::Screen& screen, const fui::Rect& box, const char* face, co
     if (clash) text[0] = static_cast<char>('0' + lessonDigit);
 
     if (mark == 'p') {
-      drawNotes(screen, at, static_cast<sk::Mask>(sk::bitFor(2) | sk::bitFor(6) | sk::bitFor(8)), 0, true);
+      drawNotes(screen, at, static_cast<sk::Mask>(sk::bitFor(2) | sk::bitFor(6) | sk::bitFor(8)), 0, true, false);
     } else if (text[0] != '\0') {
       fui::TextStyle digit;
       digit.font = font;
@@ -599,8 +644,7 @@ fui::Rect railRowRect(const fui::DeviceContext& device, const int row) {
 }
 
 fui::Rect panelRect(const fui::DeviceContext& device) {
-  return fui::makeRect(static_cast<int16_t>(gridLeft(device) + (kGridSide - kPanelWidth) / 2),
-                       static_cast<int16_t>(gridTop() + (kGridSide - kPanelHeight) / 2), kPanelWidth, kPanelHeight);
+  return fui::makeRect(boardLeft(device), kBoardTop, kPanelWidth, kPanelHeight);
 }
 
 void formatClock(const uint32_t ms, char* out, const int size) {
@@ -780,10 +824,15 @@ void buildBoard(toybox::Screen& screen, const BoardModel& model) {
     std::snprintf(right, sizeof(right), "%s  %s", sk::levelName(model.game.puzzle.level), minutes);
   }
   toyboxChrome(screen, "SUDOKU+", right);
+  // The panel is the whole page below the header, and the board is not drawn
+  // under it: nothing it would leave showing could answer a tap.
+  if (model.panelOpen) {
+    drawPanel(screen, model);
+    return;
+  }
   drawGrid(screen, model);
   drawPad(screen, model);
   drawRail(screen, model);
-  if (model.panelOpen) drawPanel(screen, model);
 }
 
 void buildResult(toybox::Screen& screen, const ResultModel& model) {

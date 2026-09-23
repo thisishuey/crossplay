@@ -26,7 +26,7 @@ enum : fui::ActionId {
   ActionSeeResult = 8,
   ActionAgain = 9,
   ActionDone = 10,
-  // A row of the MENU panel over the board, value = the PanelRow.
+  // A row of the MENU panel, value = the PanelRow.
   ActionPanelRow = 11,
 };
 
@@ -53,8 +53,9 @@ struct BoardModel {
   // The level being carved, which is what the header names while `generating`:
   // `game` is still the previous puzzle then.
   sudoku::Level generatingLevel = sudoku::Level::Easy;
-  // The MENU panel is up. The board is still drawn beneath it, but nothing on
-  // the rail answers a tap and the activity hit-tests neither grid nor pad.
+  // The MENU panel is up. It covers the page below the header and the board is
+  // not drawn at all -- no grid, pad or rail -- so its rows are the only things
+  // on screen, and the activity hit-tests neither grid nor pad.
   bool panelOpen = false;
 };
 
