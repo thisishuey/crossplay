@@ -1,13 +1,15 @@
 #pragma once
 
-// SUDOKU+'s navigation, and nothing else. Freestanding. The same four screens
-// as SUDOKU, for SUDOKU's reasons (see ../sudoku/SudokuFlow.h).
+// SUDOKU+'s navigation, and the one refresh rule that follows from it: which
+// paints flash as the MENU panel comes and goes. Freestanding. The same four
+// screens as SUDOKU, for SUDOKU's reasons (see ../sudoku/SudokuFlow.h).
 //
-// The MENU panel is not a screen. It is a sub-state of the board, drawn over
-// the grid, because what it offers -- a hint, filling notes, a check, two
-// toggles -- is all about the board underneath it and all of it wants that
-// board still in view. Its Back is the activity's business: Back closes the
-// panel before it does anything else.
+// The MENU panel is not a screen. It is a sub-state of the board: what it
+// offers -- a hint, filling notes, a check, three toggles -- is all about the
+// board, and the three questions close it so their answers land on the board.
+// It is drawn as a full-page sheet below the header with the board hidden,
+// so nothing under it can look live. Its Back is the activity's business:
+// Back closes the panel before it does anything else.
 
 #include <cstdint>
 
@@ -60,5 +62,24 @@ constexpr BackAction backAction(const Screen screen, const bool panelOpen) {
   if (leavesApp(screen)) return BackAction::LeaveApp;
   return BackAction::GoTo;
 }
+
+// Whether a paint is a full refresh: exactly when it puts the panel up or takes
+// it down. The sheet replaces a dense board wholesale, and the board the sheet,
+// so a fast refresh would leave the one ghosting under the other. A toggle
+// repaints the panel over the panel and a tap repaints the board over the
+// board; both stay fast, so browsing the panel and playing stay quiet.
+//
+// It remembers what the last paint showed, so the activity holds one, asks it
+// once per paint, and starts a fresh one on entry: nothing is on screen then.
+struct PanelPaint {
+  bool shown = false;  // the last paint was the panel
+
+  // `drewPanel` is what this paint shows. Returns whether it flashes.
+  bool next(const bool drewPanel) {
+    const bool flash = drewPanel != shown;
+    shown = drewPanel;
+    return flash;
+  }
+};
 
 }  // namespace sudokuplus

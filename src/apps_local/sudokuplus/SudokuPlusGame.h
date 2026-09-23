@@ -11,7 +11,12 @@
 // **You pick a cell, then a digit.** `selected` is the cell and `focus` is the
 // digit the board is lit for. They are separate facts: tapping a cell that
 // holds a 7 focuses 7, but tapping an empty cell leaves the focus where it was,
-// so you can keep reading the board for 7s while you move around it.
+// so you can keep reading the board for 7s while you move around it. A write
+// that lands -- a digit, a note, or tapping the digit a cell already holds --
+// lets go of the cell: the board is read again before the next write is aimed,
+// and a selection that outlived its write would be the next tap's accident. A
+// write that is refused keeps it, so the player can see where the tap went.
+// ERASE is not number entry, and keeps the selection.
 //
 // **A note is never edited by anything but the player**, for SUDOKU's reason.
 // Placing a 5 does not strike 5 from its peers' notes; `visibleNotes` hides it
@@ -93,8 +98,9 @@ struct Game {
   uint8_t notesMode = 0;
   uint8_t showRemaining = 1;
   uint8_t shadePeers = 1;
-  // How a pencil mark is drawn: a hollow dot whose place in the cell is its
-  // digit (1 top-left, 9 bottom-right, as on the pad), or the small numeral.
+  // How a pencil mark is drawn: a grey ring (a solid black dot for the focused
+  // digit) whose place in the cell is its digit (1 top-left, 9 bottom-right, as
+  // on the pad), or the small numeral.
   // Dots by default: a numeral at note size is hard to read on this panel.
   uint8_t noteShapes = 1;
 
@@ -272,8 +278,9 @@ inline bool tapCell(Game& game, const int cell) {
 }
 
 // A tap on a pad key. With a writable cell selected it writes (or, in NOTES,
-// pencils); with nothing to write to it only moves the focus, so the pad is
-// also the way to ask "where are the 6s".
+// pencils) and then deselects the cell; with nothing to write to it only moves
+// the focus, so the pad is also the way to ask "where are the 6s". A refused
+// note keeps the selection.
 inline bool tapDigit(Game& game, const int digit) {
   if (digit < 1 || digit > kSize || game.solvedFlag != 0) return false;
   if (!hasTarget(game)) {
@@ -291,6 +298,7 @@ inline bool tapDigit(Game& game, const int digit) {
     pushChange(game, cell, false);
     game.note[cell] = static_cast<Mask>(game.note[cell] ^ bitFor(digit));
     commitEdit(game);
+    game.selected = kNoCell;
     return true;
   }
   pushChange(game, cell, false);
@@ -302,6 +310,7 @@ inline bool tapDigit(Game& game, const int digit) {
   }
   game.focus = static_cast<uint8_t>(digit);
   commitEdit(game);
+  game.selected = kNoCell;
   return true;
 }
 

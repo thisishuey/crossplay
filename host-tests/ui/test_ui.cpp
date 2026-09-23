@@ -106,6 +106,9 @@ class FakeTarget final : public fui::DrawTarget {
   // ground -- Battlefield freezing a card -- is otherwise untestable, and it is
   // exactly the kind of state a screenshot will not happen to contain.
   std::vector<fui::Paint> fillPaints;
+  // And the corner radius, parallel to `fills`. A round dot and a square are
+  // the same rect; only the radius tells "a dot" from "a box" (SUDOKU+'s notes).
+  std::vector<uint8_t> fillRadii;
   std::vector<Blit> blits;
   // Outlines and marks, which used to be dropped on the floor. "Does this look
   // like a button" is a question about a BORDER, so a target that records only
@@ -203,10 +206,11 @@ class FakeTarget final : public fui::DrawTarget {
   }
   int16_t lineHeight(const fui::FontId) const override { return lineH; }
 
-  void fill(const fui::Rect rect, const fui::Paint paint, const uint8_t = 0, const uint8_t = 0xFF) override {
+  void fill(const fui::Rect rect, const fui::Paint paint, const uint8_t radius = 0, const uint8_t = 0xFF) override {
     if (paint.kind != fui::PaintKind::None) {
       fills.push_back(rect);
       fillPaints.push_back(paint);
+      fillRadii.push_back(radius);
     }
   }
   void stroke(const fui::Rect rect, const fui::Paint paint, const uint8_t width, const uint8_t = 0,
@@ -8944,6 +8948,8 @@ void testTheSudokuPlusRailIsItsFourControls() {
   while (sudokuplus::isGiven(model.game, cell)) ++cell;
   sudokuplus::tapCell(model.game, cell);
   sudokuplus::tapDigit(model.game, 5);
+  // The write lets go of the cell; selecting it again is what makes ERASE live.
+  sudokuplus::tapCell(model.game, cell);
   Rendered used;
   buildSudokuPlusBoard(used, model);
   const std::vector<int> busy = sudokuReachableActions(used);
@@ -8966,8 +8972,9 @@ void testTheSudokuPlusRailIsItsFourControls() {
   for (const auto& run : used.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
 }
 
-// The panel is modal, fits the interaction buffer, stays on the 480x800
-// panel, and reaches every one of its rows.
+// The panel is modal, fits the interaction buffer, and is a full-page sheet:
+// it covers everything below the header, the board is not drawn under it, and
+// its rows are the only things a tap can reach.
 void testTheSudokuPlusMenuPanelIsModalAndFits() {
   const fui::DeviceContext ctx = device();
   sudokuplusui::BoardModel model;
@@ -8975,7 +8982,9 @@ void testTheSudokuPlusMenuPanelIsModalAndFits() {
   int cell = 0;
   while (sudokuplus::isGiven(model.game, cell)) ++cell;
   sudokuplus::tapCell(model.game, cell);
-  sudokuplus::tapDigit(model.game, 5);  // so ERASE and UNDO are live beneath
+  sudokuplus::tapDigit(model.game, 5);
+  // Selected again, so ERASE and UNDO would both be live if the rail were drawn.
+  sudokuplus::tapCell(model.game, cell);
   model.panelOpen = true;
   Rendered out;
   buildSudokuPlusBoard(out, model);
@@ -8990,16 +8999,46 @@ void testTheSudokuPlusMenuPanelIsModalAndFits() {
   CHECK(static_cast<int>(rows.size()) == static_cast<int>(sudokuplusui::PanelRow::Count));
   for (int row = 0; row < static_cast<int>(sudokuplusui::PanelRow::Count); ++row) CHECK(contains(rows, row));
 
+  // The sheet is the page below the header: from the board's top to the
+  // bottom margin, the board's full width, over the grid, the pad and the rail.
   const fui::Rect sheet = sudokuplusui::panelRect(ctx);
   CHECK(sudokuPlusOnPanel(sheet));
-  CHECK(sudokuPlusInside(sheet,
-                         fui::makeRect(sudokuplusui::cellRect(ctx, 0).x, sudokuplusui::cellRect(ctx, 0).y, 450, 450)));
+  CHECK(sheet.y >= toybox::kChromeHeight);
+  CHECK(sheet.y <= toybox::kChromeHeight + toybox::kGutter);
+  CHECK(sheet.bottom() == 800 - toybox::kMargin);
+  CHECK(sheet.width >= 450);
+  CHECK(sudokuPlusInside(sudokuplusui::cellRect(ctx, 0), sheet));
+  CHECK(sudokuPlusInside(sudokuplusui::cellRect(ctx, sudoku::kCells - 1), sheet));
+  for (int digit = 1; digit <= sudoku::kSize; ++digit)
+    CHECK(sudokuPlusInside(sudokuplusui::padKeyRect(ctx, digit), sheet));
+  for (int row = 0; row < sudokuplusui::kRailRows; ++row) {
+    CHECK(sudokuPlusInside(sudokuplusui::railRowRect(ctx, row), sheet));
+  }
+  // Every row answers inside the sheet, below the header.
+  for (int y = 2; y < 800; y += 7) {
+    for (int x = 2; x < 480; x += 7) {
+      if (out.tap(x, y).action == fui::NO_ACTION) continue;
+      CHECK(sudokuPlusInside(fui::makeRect(static_cast<int16_t>(x), static_cast<int16_t>(y), 1, 1), sheet));
+    }
+  }
+
+  // Nothing of the board is drawn: no rail label, no grid or pad numeral.
   for (const auto& run : out.target.texts) CHECK(sudokuPlusOnPanel(run.rect));
+  CHECK(out.target.find("NOTES") == nullptr);
+  CHECK(out.target.find("ERASE") == nullptr);
+  CHECK(out.target.find("UNDO") == nullptr);
+  CHECK(out.target.find("MENU") == nullptr);
+  for (const auto& run : out.target.texts) {
+    if (run.rect.y < toybox::kHeaderHeight) continue;
+    CHECK(run.style.font != toybox::kDisplayFont);
+    CHECK(!(run.text.size() == 1 && run.text[0] >= '1' && run.text[0] <= '9'));
+  }
   CHECK(out.target.find("HINT") != nullptr);
   CHECK(out.target.find("FILL NOTES") != nullptr);
   CHECK(out.target.find("CHECK") != nullptr);
   CHECK(out.target.find("SHOW REMAINING: ON") != nullptr);
   CHECK(out.target.find("SHADE PEERS: ON") != nullptr);
+  CHECK(out.target.find("NOTES AS: DOTS") != nullptr);
   CHECK(out.target.find("CLOSE") != nullptr);
 
   // A finished board keeps the toggles and the door, and loses the questions.
@@ -9016,6 +9055,7 @@ void testTheSudokuPlusMenuPanelIsModalAndFits() {
   CHECK(!contains(left, static_cast<int>(sudokuplusui::PanelRow::Check)));
   CHECK(contains(left, static_cast<int>(sudokuplusui::PanelRow::ShowRemaining)));
   CHECK(contains(left, static_cast<int>(sudokuplusui::PanelRow::Close)));
+  CHECK(!contains(sudokuReachableActions(done), sudokuplusui::ActionSeeResult));
 }
 
 void testTheSudokuPlusSolvedSlotIsTheDoor() {
@@ -9311,9 +9351,25 @@ void testTheSudokuPlusPadSaysFocusAndRemaining() {
   }
 }
 
-// A pencilled mark of the focused digit is knocked out of a black chip.
-// NOTES AS: DOTS, the default. A mark is a hollow dot in its digit's place,
-// the focused digit's mark a solid square, and no numeral is drawn at all.
+// The fills of exactly `w` x `h` inside `box`, of one paint, and optionally one
+// corner radius (-1 for any).
+int sudokuPlusFillsIn(const Rendered& out, const fui::Rect& box, const int16_t w, const int16_t h,
+                      const fui::PaintKind kind, const fui::Color color, const int radius = -1) {
+  int found = 0;
+  for (size_t i = 0; i < out.target.fills.size(); ++i) {
+    const fui::Rect& r = out.target.fills[i];
+    const fui::Paint& paint = out.target.fillPaints[i];
+    if (paint.kind != kind || paint.color != color || r.width != w || r.height != h) continue;
+    if (!(r.x > box.x && r.right() < box.right() && r.y > box.y && r.bottom() < box.bottom())) continue;
+    if (radius >= 0 && out.target.fillRadii[i] != radius) continue;
+    ++found;
+  }
+  return found;
+}
+
+// NOTES AS: DOTS, the default. A mark is a round dot in its digit's place: a
+// grey ring on a paper disc, or for the focused digit a solid black disc -- no
+// square, and no numeral is drawn at all.
 void testTheSudokuPlusNotesAreDotsByDefault() {
   const fui::DeviceContext ctx = device();
   sudokuplusui::BoardModel model;
@@ -9327,31 +9383,30 @@ void testTheSudokuPlusNotesAreDotsByDefault() {
   for (int d = 1; d <= sudoku::kSize; ++d) {
     if ((open & sudoku::bitFor(d)) != 0 && d != focused) ++dots;
   }
+  CHECK(dots > 0);
   model.game.note[cell] = open;
   model.game.focus = static_cast<uint8_t>(focused);
+  // Shaded, so the paper under each grey ring is doing its job.
+  model.game.selected = static_cast<uint8_t>(cell);
+  CHECK(sudokuplus::isShadedPeer(model.game, cell));
   Rendered out;
   buildSudokuPlusBoard(out, model);
   const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
-  auto inside = [&box](const fui::Rect& r) {
-    return r.x > box.x && r.right() < box.right() && r.y > box.y && r.bottom() < box.bottom();
-  };
 
-  int squares = 0;
-  int discs = 0;
-  for (size_t i = 0; i < out.target.fills.size(); ++i) {
-    const fui::Rect& r = out.target.fills[i];
-    const fui::Paint& paint = out.target.fillPaints[i];
-    if (paint.kind != fui::PaintKind::Solid || !inside(r) || r.width != 10 || r.height != 10) continue;
-    if (paint.color == fui::Color::Black) ++squares;
-    if (paint.color == fui::Color::White) ++discs;
-  }
-  int rings = 0;
+  // The focused mark: one solid black ROUND dot, and no square of any colour.
+  CHECK(sudokuPlusFillsIn(out, box, 10, 10, fui::PaintKind::Solid, fui::Color::Black, 5) == 1);
+  CHECK(sudokuPlusFillsIn(out, box, 10, 10, fui::PaintKind::Solid, fui::Color::Black, 0) == 0);
+  // Every other mark: a paper disc, a grey disc over it, a paper disc inside
+  // that -- a 2px grey ring that sits on paper, not on the LightGray ground.
+  CHECK(sudokuPlusFillsIn(out, box, 10, 10, fui::PaintKind::Solid, fui::Color::White, 5) == dots);
+  CHECK(sudokuPlusFillsIn(out, box, 10, 10, fui::PaintKind::Dither, fui::Color::DarkGray, 5) == dots);
+  CHECK(sudokuPlusFillsIn(out, box, 6, 6, fui::PaintKind::Solid, fui::Color::White, 3) == dots);
+  CHECK(sudokuPlusFillsIn(out, box, 10, 10, fui::PaintKind::Dither, fui::Color::LightGray) == 0);
+  // A stroke has no dithered ink on the device, so no mark is stroked.
   for (const auto& stroke : out.target.strokes) {
-    if (inside(stroke.rect) && stroke.rect.width == 10 && stroke.width == 2) ++rings;
+    CHECK(!(stroke.rect.x > box.x && stroke.rect.right() < box.right() && stroke.rect.y > box.y &&
+            stroke.rect.bottom() < box.bottom()));
   }
-  CHECK(squares == 1);
-  CHECK(discs == dots);
-  CHECK(rings == dots);
   for (const auto& run : out.target.texts) {
     if (run.style.font != toybox::kTileFont) continue;
     const int16_t midY = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
@@ -9372,7 +9427,10 @@ void testTheSudokuPlusNotesAreDotsByDefault() {
   }
 }
 
-void testTheSudokuPlusFocusedNoteIsAChip() {
+// NOTES AS: DIGITS. Unfocused numerals are grey; the focused digit's numeral
+// is plain black, with no chip behind it. On a shaded cell each grey numeral
+// has paper knocked out under it; on paper it needs none.
+void testTheSudokuPlusFocusedNoteIsPlainBlack() {
   const fui::DeviceContext ctx = device();
   sudokuplusui::BoardModel model;
   model.game = aSudokuPlusGame(sudoku::Level::Easy);
@@ -9385,35 +9443,82 @@ void testTheSudokuPlusFocusedNoteIsAChip() {
   for (int d = focused + 1; d <= sudoku::kSize && other == 0; ++d) {
     if ((open & sudoku::bitFor(d)) != 0) other = d;
   }
-  model.game.note[cell] = static_cast<sudoku::Mask>(sudoku::bitFor(focused) | (other != 0 ? sudoku::bitFor(other) : 0));
+  CHECK(other != 0);
+  model.game.note[cell] = static_cast<sudoku::Mask>(sudoku::bitFor(focused) | sudoku::bitFor(other));
   model.game.focus = static_cast<uint8_t>(focused);
   model.game.noteShapes = 0;  // NOTES AS: DIGITS
-  Rendered out;
-  buildSudokuPlusBoard(out, model);
   const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
 
-  int chips = 0;
-  for (size_t i = 0; i < out.target.fills.size(); ++i) {
-    const fui::Rect& r = out.target.fills[i];
-    const fui::Paint& paint = out.target.fillPaints[i];
-    if (paint.kind != fui::PaintKind::Solid || paint.color != fui::Color::Black) continue;
-    if (r.x > box.x && r.right() < box.right() && r.y > box.y && r.bottom() < box.bottom() && r.width == r.height &&
-        r.width > 4) {
-      ++chips;
+  auto blackSquares = [&box](const Rendered& out) {
+    int chips = 0;
+    for (size_t i = 0; i < out.target.fills.size(); ++i) {
+      const fui::Rect& r = out.target.fills[i];
+      const fui::Paint& paint = out.target.fillPaints[i];
+      if (paint.kind != fui::PaintKind::Solid || paint.color != fui::Color::Black) continue;
+      if (r.x > box.x && r.right() < box.right() && r.y > box.y && r.bottom() < box.bottom() && r.width == r.height &&
+          r.width > 4) {
+        ++chips;
+      }
     }
+    return chips;
+  };
+  auto numeral = [&box](const Rendered& out, const int digit) -> const FakeTarget::TextRun* {
+    for (const auto& run : out.target.texts) {
+      if (run.style.font != toybox::kTileFont || run.rect.x < box.x || run.rect.right() > box.right()) continue;
+      const int16_t midY = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
+      if (midY < box.y || midY >= box.bottom()) continue;
+      if (run.text == std::to_string(digit)) return &run;
+    }
+    return nullptr;
+  };
+  auto paperUnder = [&box](const Rendered& out, const FakeTarget::TextRun* run) {
+    if (run == nullptr) return false;
+    const int16_t midX = static_cast<int16_t>(run->rect.x + run->rect.width / 2);
+    const int16_t midY = static_cast<int16_t>(run->rect.y + run->rect.height / 2);
+    for (size_t i = 0; i < out.target.fills.size(); ++i) {
+      const fui::Rect& r = out.target.fills[i];
+      const fui::Paint& paint = out.target.fillPaints[i];
+      if (paint.kind != fui::PaintKind::Solid || paint.color != fui::Color::White) continue;
+      if (r.x <= box.x || r.right() >= box.right() || r.y <= box.y || r.bottom() >= box.bottom()) continue;
+      if (r.x < midX && midX < r.right() && r.y <= midY && midY < r.bottom() && r.width >= 11) return true;
+    }
+    return false;
+  };
+
+  // The device has no dithered text, so a grey numeral is drawn black and
+  // greyed after: 1px paper lines at 45 degrees over it, on the odd
+  // anti-diagonals (x + y odd) that DarkGray's dither leaves white.
+  auto greyedOut = [](const Rendered& out, const FakeTarget::TextRun* run) {
+    if (run == nullptr) return 0;
+    const int16_t midX = static_cast<int16_t>(run->rect.x + run->rect.width / 2);
+    int found = 0;
+    for (const auto& seg : out.target.lines) {
+      if (seg.width != 1 || seg.color != fui::Color::White) continue;
+      const int dx = seg.b.x - seg.a.x;
+      const int dy = seg.a.y - seg.b.y;
+      if (dx != dy || (seg.a.x + seg.a.y) % 2 == 0 || (seg.b.x + seg.b.y) != (seg.a.x + seg.a.y)) return -1;
+      if (seg.a.x >= midX - 6 && seg.b.x <= midX + 6 && seg.b.y >= run->rect.y && seg.a.y < run->rect.bottom()) {
+        ++found;
+      }
+    }
+    return found;
+  };
+
+  for (const bool shaded : {false, true}) {
+    model.game.selected = shaded ? static_cast<uint8_t>(cell) : sudokuplus::kNoCell;
+    CHECK(sudokuplus::isShadedPeer(model.game, cell) == shaded);
+    Rendered out;
+    buildSudokuPlusBoard(out, model);
+    CHECK(blackSquares(out) == 0);
+    const FakeTarget::TextRun* focus = numeral(out, focused);
+    const FakeTarget::TextRun* grey = numeral(out, other);
+    CHECK(focus != nullptr && focus->style.color == fui::Color::Black);
+    CHECK(grey != nullptr && grey->style.color == fui::Color::DarkGray);
+    CHECK(paperUnder(out, grey) == shaded);
+    CHECK(!paperUnder(out, focus));
+    CHECK(greyedOut(out, grey) > 4);
+    CHECK(greyedOut(out, focus) == 0);
   }
-  CHECK(chips == 1);
-  bool whiteFocus = false;
-  bool blackOther = other == 0;
-  for (const auto& run : out.target.texts) {
-    if (run.style.font != toybox::kTileFont || run.rect.x < box.x || run.rect.right() > box.right()) continue;
-    const int16_t midY = static_cast<int16_t>(run.rect.y + run.rect.height / 2);
-    if (midY < box.y || midY >= box.bottom()) continue;
-    if (run.text == std::to_string(focused) && run.style.color == fui::Color::White) whiteFocus = true;
-    if (other != 0 && run.text == std::to_string(other) && run.style.color == fui::Color::Black) blackOther = true;
-  }
-  CHECK(whiteFocus);
-  CHECK(blackOther);
 }
 
 void testEverySudokuPlusScreenStaysOnThePanel() {
@@ -14457,7 +14562,7 @@ int main() {
   testTheSudokuPlusHeaderClockCrossesTheHour();
   testTheSudokuPlusPadSaysFocusAndRemaining();
   testTheSudokuPlusNotesAreDotsByDefault();
-  testTheSudokuPlusFocusedNoteIsAChip();
+  testTheSudokuPlusFocusedNoteIsPlainBlack();
   testEverySudokuPlusScreenStaysOnThePanel();
   testPicrossBoardSpendsFewInteractions();
   testPicrossGridHitTestIsExactInverse();

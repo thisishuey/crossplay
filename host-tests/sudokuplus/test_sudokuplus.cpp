@@ -117,7 +117,7 @@ void testSelect() {
   // A player's digit focuses too.
   sp::tapCell(game, empty);
   sp::tapDigit(game, 4);
-  sp::tapCell(game, empty);  // deselect
+  checkEq(game.selected, sp::kNoCell, "the write lets go of the cell");
   game.focus = 0;
   sp::tapCell(game, empty);
   checkEq(game.focus, 4, "tapping your own digit focuses it");
@@ -133,15 +133,20 @@ void testEnterAndSameDigit() {
   checkEq(game.note[cell], 0, "the cell's notes clear");
   checkEq(game.focus, 6, "focus becomes the digit");
   checkEq(game.undoCount, 1, "one undo step");
-  checkEq(game.selected, cell, "the cell stays selected");
+  checkEq(game.selected, sp::kNoCell, "and the cell is deselected");
 
-  // Overwriting is one step as well.
+  // Overwriting is one step as well, once the cell is selected again.
+  sp::tapCell(game, cell);
+  checkEq(game.selected, cell, "the written cell can be selected again");
   sp::tapDigit(game, 8);
   checkEq(game.entry[cell], 8, "another digit overwrites");
   checkEq(game.undoCount, 2, "one more step");
+  checkEq(game.selected, sp::kNoCell, "and deselects");
 
+  sp::tapCell(game, cell);
   check(sp::tapDigit(game, 8), "the same digit again does something");
   checkEq(game.entry[cell], 0, "the same digit clears the entry");
+  checkEq(game.selected, sp::kNoCell, "clearing is a write, so it deselects too");
 
   check(sp::undoOnce(game), "undo the clear");
   checkEq(game.entry[cell], 8, "undo brings the 8 back");
@@ -167,11 +172,15 @@ void testNotes() {
   checkEq(game.entry[cell], 0, "and nothing is written");
   checkEq(game.undoCount, 1, "one undo step");
   checkEq(game.focus, focusBefore, "pencilling does not move the focus");
+  checkEq(game.selected, sp::kNoCell, "a note deselects the cell");
 
+  sp::tapCell(game, cell);
   sp::tapDigit(game, b);
   checkEq(game.note[cell], static_cast<sp::Mask>(sp::bitFor(a) | sp::bitFor(b)), "marks accumulate");
+  sp::tapCell(game, cell);
   sp::tapDigit(game, a);
   checkEq(game.note[cell], sp::bitFor(b), "the same digit rubs its mark out");
+  checkEq(game.selected, sp::kNoCell, "rubbing a mark out deselects as well");
 
   // Undo of a note.
   check(sp::undoOnce(game), "undo a note");
@@ -182,12 +191,15 @@ void testNotes() {
 
   // Note on a filled cell: nothing happens.
   game.notesMode = 0;
+  sp::tapCell(game, cell);
   sp::tapDigit(game, 9);
   game.notesMode = 1;
+  sp::tapCell(game, cell);
   const sp::Game before = game;
   check(!sp::tapDigit(game, 2), "a note on a cell holding a digit does nothing");
   check(sameBoard(before, game), "the board is unchanged");
   checkEq(game.undoCount, before.undoCount, "and no undo step is spent");
+  checkEq(game.selected, cell, "and a refused note keeps the selection");
 }
 
 void testNoTarget() {
@@ -232,7 +244,9 @@ void testErase() {
   const int a = openDigit(game, cell, 0);
   const int b = openDigit(game, cell, 1);
   sp::tapDigit(game, a);
+  sp::tapCell(game, cell);
   sp::tapDigit(game, b);
+  sp::tapCell(game, cell);
   check(sp::canErase(game), "a marked cell can be erased");
   const uint8_t steps = game.undoCount;
   check(sp::erase(game), "erase");
@@ -243,6 +257,7 @@ void testErase() {
 
   game.notesMode = 0;
   sp::tapDigit(game, 5);
+  sp::tapCell(game, cell);
   check(sp::erase(game), "erase an entry");
   checkEq(game.entry[cell], 0, "the entry clears");
   checkEq(game.note[cell], 0, "and so do the notes");
@@ -360,7 +375,6 @@ void testAFillNeverUndoesByHalves() {
   const int fillSlots = game.undoCount;
   check(fillSlots > 1 && fillSlots < sp::kUndoSlots, "a fill is several slots and fits the ring");
   const int cell = firstEmpty(game);
-  sp::tapCell(game, cell);
   game.notesMode = 1;
   // Exactly enough single steps to overwrite the fill's FIRST slot and no
   // more, which leaves the rest of the fill in the ring with no beginning.
@@ -368,8 +382,12 @@ void testAFillNeverUndoesByHalves() {
   // than this evict the whole fill anyway.
   const int steps = sp::kUndoSlots - fillSlots + 1;
   // One open digit toggled on and off: every tap is a real, single-cell step.
+  // Each write lets go of the cell, so each one selects it first.
   const int digit = openDigit(game, cell, 0);
-  for (int i = 0; i < steps; ++i) sp::tapDigit(game, digit);
+  for (int i = 0; i < steps; ++i) {
+    sp::tapCell(game, cell);
+    sp::tapDigit(game, digit);
+  }
   int undone = 0;
   while (sp::undoOnce(game)) ++undone;
   checkEq(undone, steps, "the orphaned tail of the fill is not an undo step");
@@ -438,7 +456,7 @@ void testHintSelectsAndClearsOnEdit() {
   const int cell = firstEmpty(game);
   sp::tapCell(game, cell);
   sp::tapDigit(game, aWrongButLegalDigit(game, cell));
-  sp::tapCell(game, cell);  // deselect
+  checkEq(game.selected, sp::kNoCell, "the write deselected it");
   sp::takeHint(game);
   checkEq(game.notice, static_cast<int>(sp::Notice::WrongDigit), "a wrong digit is named first");
   checkEq(game.selected, cell, "and selected");
@@ -609,6 +627,7 @@ void testNotesRefuseADigitAPeerHolds() {
   check(!sp::tapDigit(game, digit), "a mark for a digit a peer holds is refused");
   check(sameBoard(before, game), "and writes nothing");
   checkEq(game.undoCount, before.undoCount, "and spends no undo");
+  checkEq(game.selected, cell, "and keeps the selection");
 }
 
 void testEraseIgnoresHiddenMarks() {
@@ -679,6 +698,29 @@ void testEveryPanelRow() {
   }
 }
 
+// The refresh rule over a whole session of paints, through the same PanelPaint
+// the activity holds: the panel going up or coming down flashes, by any path,
+// and nothing else does. A fresh one -- what onEnter() starts -- does not
+// flash on a board.
+void testOnlyThePanelGoingUpOrDownFlashes() {
+  struct Step {
+    bool drewPanel;
+    bool flashes;
+    const char* what;
+  };
+  const Step steps[] = {
+      {false, false, "the first board paint is fast"},    {true, true, "MENU opening the panel is a full refresh"},
+      {true, false, "a toggle repaints the panel fast"},  {true, false, "and so does a second toggle"},
+      {false, true, "CLOSE is a full refresh"},           {false, false, "a grid tap repaints the board fast"},
+      {true, true, "opening it again is a full refresh"}, {false, true, "and so is Back closing it"},
+  };
+  sp::PanelPaint paint;
+  for (const Step& step : steps) checkEq(paint.next(step.drewPanel), step.flashes, step.what);
+
+  sp::PanelPaint fresh;
+  check(!fresh.next(false), "a fresh PanelPaint does not flash on a board");
+}
+
 // Back, the whole table: the panel first, then the screens.
 void testBackClosesThePanelFirst() {
   check(sp::backAction(sp::Screen::Board, true) == sp::BackAction::ClosePanel, "Back with the panel up closes it");
@@ -706,10 +748,11 @@ void testTheSaveRoundTrips() {
   const int b = firstEmpty(game, a + 1);
   sp::tapCell(game, a);
   sp::tapDigit(game, game.puzzle.solution[a]);
-  sp::tapCell(game, b);
   game.notesMode = 1;
-  sp::tapDigit(game, 2);
-  sp::tapDigit(game, 8);
+  sp::tapCell(game, b);
+  check(sp::tapDigit(game, openDigit(game, b, 0)), "a first mark");
+  sp::tapCell(game, b);
+  check(sp::tapDigit(game, openDigit(game, b, 1)), "and a second");
   game.showRemaining = 0;
   game.shadePeers = 1;
   game.elapsedMs = 1234567;
@@ -717,6 +760,10 @@ void testTheSaveRoundTrips() {
   state.record.solved[2] = 5;
   state.record.bestMs[2] = 777000;
   state.record.hintsTaken = 9;
+  // Something selected when the save is written, so "nothing selected after a
+  // reopen" is the save's doing and not the last write's.
+  sp::tapCell(game, b);
+  checkEq(game.selected, b, "a cell is selected when the game is saved");
 
   char buffer[sp::kStateBytes];
   const int used = sp::packState(state, buffer, sizeof(buffer));
@@ -891,6 +938,7 @@ int main() {
   testEraseIgnoresHiddenMarks();
   testEveryPanelRow();
   testBackClosesThePanelFirst();
+  testOnlyThePanelGoingUpOrDownFlashes();
   std::printf("SUDOKU+ save\n");
   testTheSaveRoundTrips();
   testABrokenSaveChangesNothing();

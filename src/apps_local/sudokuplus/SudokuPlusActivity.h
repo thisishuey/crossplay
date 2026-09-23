@@ -63,8 +63,11 @@ class SudokuPlusActivity final : public Activity {
   sudoku::Level generatingLevel = sudoku::Level::Easy;
   uint32_t rng = 0;
 
-  // The MENU panel over the board. A sub-state of Board, not a screen.
+  // The MENU panel, a full-page sheet in place of the board. A sub-state of
+  // Board, not a screen.
   bool panelOpen = false;
+  // Which paints flash as the panel comes and goes; see sudokuplus::PanelPaint.
+  sudokuplus::PanelPaint panelPaint{};
 
   unsigned long lastTickMs = 0;
   // The minute the header last showed, so the clock repaints once a minute and

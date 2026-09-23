@@ -29,6 +29,7 @@ void SudokuPlusActivity::onEnter() {
   toybox::ensureFonts(renderer);
   screen = sp::Screen::Menu;
   panelOpen = false;
+  panelPaint = {};
   menuSelected = -1;
   lastTickMs = millis();
   // The only entropy that differs between two boots, entering here and nowhere
@@ -152,8 +153,8 @@ void SudokuPlusActivity::saveState() {
 }
 
 // What moves the pixel-to-effect map of the grid and the pad: the screen, a
-// puzzle arriving with no tap at all, and the panel, which turns the whole grid
-// and pad inert while it is up. The selection, focus and cell contents are
+// puzzle arriving with no tap at all, and the panel, which replaces the whole
+// grid and pad while it is up. The selection, focus and cell contents are
 // deliberately absent: they change on every tap, and gating consecutive taps
 // on a repaint is the frozen-device failure. See SudokuActivity.cpp.
 uint32_t SudokuPlusActivity::surfaceMeaning() const {
@@ -339,6 +340,7 @@ void SudokuPlusActivity::render(RenderLock&&) {
   interactionsReady = false;
   toybox::Frame frame(target, device, noInput, interactions);
   toybox::Screen surface(frame);
+  const bool drewPanel = screen == sp::Screen::Board && panelOpen;
 
   switch (screen) {
     case sp::Screen::Menu: {
@@ -387,5 +389,8 @@ void SudokuPlusActivity::render(RenderLock&&) {
 
   const auto labels = mappedInput.mapLabels("Back", "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  renderer.displayBuffer();
+  // Decided from what this frame drew against what the last one did, so every
+  // way the panel goes up or comes down flashes, and nothing else does.
+  const bool flash = panelPaint.next(drewPanel);
+  renderer.displayBuffer(flash ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
 }
