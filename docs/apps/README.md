@@ -1,6 +1,6 @@
 # What is in docs/apps/
 
-One directory, 38 files, and until this index they were a raw file listing. A
+One directory, 43 files, and until this index they were a raw file listing. A
 doc lands here when something about an app would otherwise be rediscovered the
 hard way; not every app has one, and some have several.
 
@@ -19,6 +19,9 @@ upstream's and covers the reader, not these.
 | [`study.md`](study.md) | Anki decks on the reader: the deck, the scheduler, and what a review does. |
 | [`instapaper.md`](instapaper.md) | The read-later queue and how it syncs. |
 | [`trivia.md`](trivia.md) | The question app, and where the questions come from. |
+| [`calculator.md`](calculator.md) | The calculator, in the TOYBOX look, and what had to be fixed at the source. |
+| [`notes-design.md`](notes-design.md) | Lists you tick with one hand: what was built and why. |
+| [`fridge.md`](fridge.md) | Live: a note, drawing or photo sent from a phone to a reader asleep on a fridge. |
 
 ## The rules a game implements
 
@@ -36,6 +39,7 @@ them. These are the ones worth a stranger's time.
 | [`sudoku.md`](sudoku.md) | Difficulty proved by a grader rather than estimated. |
 | [`jaipur.md`](jaipur.md) | The two-player trading game, solo or nearby. |
 | [`seasalt.md`](seasalt.md) | Sea Salt & Paper, and the rulebook contradiction Mario settled. |
+| [`hearts.md`](hearts.md) | The shelf's first trick-taking game, and the shared deck it created. |
 | [`toybattle.md`](toybattle.md) | The fork's first graph board. |
 | [`go.md`](go.md) | Area scoring, and the counting screen area scoring forces. |
 | [`hex.md`](hex.md) | A connection game with no captures and no draws, and the geometry that fills the panel. |
@@ -85,6 +89,7 @@ top; the rest is this row.
 | [`wallpapers-shuffle.md`](wallpapers-shuffle.md) | Choosing a set and letting it take turns. |
 | [`xkcd-viewing-plan.md`](xkcd-viewing-plan.md) | Reworking how comics are shown. |
 | [`wikipedia-plan.md`](wikipedia-plan.md) | Fifty thousand articles on the card, argued before the code. |
+| [`notes-research.md`](notes-research.md) | The prior art on text for small, slow screens, behind Notes. |
 
 ## Generated, not written
 

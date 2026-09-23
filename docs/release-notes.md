@@ -21,6 +21,88 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
+### 1.13.18
+
+- Live: the board fits a phone, the history is shared, and a schedule can be a time of day
+
+### 1.13.17
+
+- Wallpapers: the upload route ends with the picture you sent
+
+### 1.13.16
+
+- Live: a scheduled refresh shows nobody anything
+
+### 1.13.15
+
+- Setting up Live works by scanning the square on the reader. It used to carry a code that was never real, so scanning could not work and you had to type the digits instead. The square and the digits now always match.
+- Live says when the reader will next look, on the website and on the reader, from the moment you connect it. There was no time shown anywhere until it had checked in once, which is when you most want to know it worked.
+- Sending your own picture over Wi-Fi has a way in again: tap Your phone on the Wallpapers screen. It had become unreachable once a reader had wallpapers on it.
+- Scanning a second reader's code while connected to a first now says so, rather than silently keeping the old one and sending your next drawing to the wrong reader.
+- A reader left on its setup screen no longer moves itself onto a new, empty Live and forgets the one you set up, which quietly stopped anything you sent arriving.
+
+### 1.13.14
+
+- nothing you can see on the device. This is the same firmware as 1.13.13, published by the new two-minute release process rather than the old forty-minute one.
+
+### 1.13.13
+
+- Live: the page moves onto the site, the service becomes an API
+
+### 1.13.12
+
+- Notes: adding an item was 5.3s of asking the card how full it was
+
+### 1.13.11
+
+- Live: add and remove phones, and a screen that says one thing
+
+### 1.13.10
+
+- Hearts: the shelf's first trick-taking game
+- Notes: a deck of cards, and a note that can become a list
+- Live: leave a handwritten note on a reader asleep on somebody's fridge
+
+### 1.13.9
+
+- One page snapshot, one holder, and no stale refresh at teardown
+- Notes: lists you tick with one hand
+
+### 1.13.7
+
+- Count the menu's paint, or every tap on it is dropped
+
+### 1.13.6
+
+- The reader's toolbar panel no longer sizes its bottom sheet with a row gap the renderer does not use, which left a six-row panel 30px shorter than its own contents on every touch board.
+- Wikipedia: make the loading cue actually show, and pay for itself
+
+### 1.13.5
+
+- The app and game shelves are back to their proper row height, and every icon sits on its own row again. 1.13.4 made the rows shorter and walked each icon down into its neighbour until the last one dropped off the list.
+- Mario, on v1.13.4: *"you really messed up the UI. Seems like you made each row on the app or game selector shorter (without reason) and broke all the icons and such."*
+- Both halves are one bug, and the icons are a consequence of the rows.
+- | | intended | v1.13.4 resolved |
+- |---|---|---|
+- | row height | `theme.rowHeight` = **62** | **56** |
+- | row gap | `listRowGap` = **4** | **6** |
+- | pitch | 66 | 62 |
+- Wikipedia: show that a long article is opening, without adding to the wait
+
+### 1.13.4
+
+- A Library on Home, in place of Recent Books: search every book on the card by title or author, browse by folder, or see what arrived most recently.
+- The Home button can be given three actions of its own: one for a tap, one for a double tap, one for a long press. Toggling the frontlight is one of them.
+- Files and bookmarks can be renamed on the device.
+- Time is set by timezone now, daylight saving included, instead of a raw UTC offset.
+- A new About screen under Settings, with the device's own details.
+- An Arabic keyboard layout, and an updated German translation.
+- Reading is lighter on memory: images, font caches and EPUB chapters all fragment the heap less, and the SD card is read in batches rather than a byte at a time.
+- Fixes: WiFi is switched off when you leave the network screen, the reader's toolbar menu works again on button-only devices, ordered lists number correctly, progressive JPEGs render, a press is no longer dropped while a list repaints, and the frontlight stays as you left it across an internal restart.
+
+### 1.13.3
+
+- Calculator: twenty keys, ten digits, and arithmetic that is actually decimal
 ### 1.14.0-fork1789350277
 
 - Go's opponent gets about a third more thinking done in the same time, so it plays better at every level.
