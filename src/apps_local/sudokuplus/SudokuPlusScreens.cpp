@@ -99,6 +99,7 @@ void cornerMarks(toybox::Screen& screen, const fui::Rect& box, const int16_t arm
 // black outside a 3px white band, the white half carrying it. On a light one
 // (paper, or LightGray) it is inverted: 3px white outside a 2px black line, so
 // it never merges with the board frame or a box rule at the edge of the grid.
+constexpr int16_t kCheckHalo = 2;
 constexpr int16_t kSelectBlack = 2;
 constexpr int16_t kSelectWhite = 3;
 void selectionFrame(toybox::Screen& screen, const fui::Rect& box, const bool light) {
@@ -217,13 +218,19 @@ void drawGrid(toybox::Screen& screen, const BoardModel& model) {
       if (sp::isClashing(game, cell)) clashSlash(screen, box, dark);
 
       // CHECK's mark: a bar struck through the numeral. Only your digits can be
-      // wrong, and only until the next edit.
+      // wrong, and only until the next edit. A black core inside a white halo,
+      // on every ground: a single-colour bar vanished where it crossed a
+      // numeral of its own colour, which on a focused digit was most of it.
       if (game.checkShown != 0 && sp::isWrong(game, cell)) {
-        const int16_t barWidth = 34;
+        const int16_t core = 34;
+        const int16_t y = static_cast<int16_t>(box.y + (box.height - toybox::kRule) / 2);
         screen.target().fill(
-            fui::makeRect(static_cast<int16_t>(box.x + (box.width - barWidth) / 2),
-                          static_cast<int16_t>(box.y + (box.height - toybox::kRule) / 2), barWidth, toybox::kRule),
-            ink(focused));
+            fui::makeRect(static_cast<int16_t>(box.x + (box.width - core) / 2 - kCheckHalo),
+                          static_cast<int16_t>(y - kCheckHalo), static_cast<int16_t>(core + 2 * kCheckHalo),
+                          static_cast<int16_t>(toybox::kRule + 2 * kCheckHalo)),
+            ink(true));
+        screen.target().fill(
+            fui::makeRect(static_cast<int16_t>(box.x + (box.width - core) / 2), y, core, toybox::kRule), ink(false));
       }
     } else {
       drawNotes(screen, box, sp::visibleNotes(game, cell), game.focus);

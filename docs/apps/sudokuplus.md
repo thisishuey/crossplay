@@ -110,7 +110,8 @@ nobody ever saw.
 - A clash is a 3px diagonal slash through the cell, white on a dark ground and
   black on a light one. It is not a frame because the selection is one, and not
   a black ground because black belongs to the focus.
-- CHECK strikes a horizontal bar through a wrong numeral.
+- CHECK strikes a horizontal bar through a wrong numeral: a black core in a
+  white halo, so it reads over a white numeral on the focus as well as on paper.
 
 ## The save
 

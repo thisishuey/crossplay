@@ -9171,6 +9171,39 @@ void testTheSudokuPlusSelectionInvertsOnLightGrounds() {
   }
 }
 
+// CHECK's bar is a black core in a white halo, so it reads over a numeral of
+// either colour: on a focused wrong digit (white on black) and on paper alike.
+void testTheSudokuPlusCheckBarReadsOnEveryGround() {
+  const fui::DeviceContext ctx = device();
+  sudokuplusui::BoardModel base;
+  base.game = aSudokuPlusGame(sudoku::Level::Easy);
+  int cell = 0;
+  while (sudokuplus::isGiven(base.game, cell)) ++cell;
+  const uint8_t wrong = static_cast<uint8_t>(base.game.puzzle.solution[cell] % 9 + 1);
+  base.game.entry[cell] = wrong;
+  base.game.checkShown = 1;
+  const fui::Rect box = sudokuplusui::cellRect(ctx, cell);
+  const uint8_t focuses[] = {wrong, 0};
+  for (const uint8_t focus : focuses) {
+    sudokuplusui::BoardModel model = base;
+    model.game.focus = focus;
+    Rendered out;
+    buildSudokuPlusBoard(out, model);
+    bool halo = false;
+    bool core = false;
+    for (size_t i = 0; i < out.target.fills.size(); ++i) {
+      const fui::Rect& r = out.target.fills[i];
+      const fui::Paint& paint = out.target.fillPaints[i];
+      if (paint.kind != fui::PaintKind::Solid || r.x <= box.x || r.right() >= box.right()) continue;
+      if (r.y <= box.y || r.bottom() >= box.bottom()) continue;
+      if (paint.color == fui::Color::White && r.width == 38 && r.height == toybox::kRule + 4) halo = true;
+      if (paint.color == fui::Color::Black && r.width == 34 && r.height == toybox::kRule && halo) core = true;
+    }
+    CHECK(halo);
+    CHECK(core);
+  }
+}
+
 // A clash is a slash, never a frame, so it cannot be mistaken for the
 // selection -- white on a dark clue, black on paper.
 void testTheSudokuPlusClashIsASlash() {
@@ -14371,6 +14404,7 @@ int main() {
   testTheSudokuPlusGroundsReadInOrder();
   testTheSudokuPlusSelectionInvertsOnLightGrounds();
   testTheSudokuPlusClashIsASlash();
+  testTheSudokuPlusCheckBarReadsOnEveryGround();
   testTheSudokuPlusHeaderClockCrossesTheHour();
   testTheSudokuPlusPadSaysFocusAndRemaining();
   testTheSudokuPlusFocusedNoteIsAChip();
